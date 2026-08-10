@@ -342,6 +342,10 @@ class CoupaScraper:
                 if mensagem_rede:
                     log_callback(f"❌ Requisição #{req}: {mensagem_rede}")
                     extracted_data.append({"requisicao": req, "erro": mensagem_rede})
+                    # Erro de rede também é fatal aqui: as requisições restantes
+                    # atingiriam o mesmo host indisponível e falhariam identicamente.
+                    log_callback("❌ Erro de rede - abortando as requisições restantes.")
+                    break
                 else:
                     log_callback(f"Erro na requisição #{req}: {str(e)}")
                     extracted_data.append({"requisicao": req, "erro": f"Falha na extração: {str(e)}"})

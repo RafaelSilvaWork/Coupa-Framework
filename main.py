@@ -1,5 +1,6 @@
 import sys
 import traceback
+from typing import NamedTuple, Optional
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QStatusBar,
@@ -22,30 +23,61 @@ from modules.module_installer import ModuleInstallWorker
 from modules.telemetry import init_telemetry
 
 
-# Mapeia a chave do módulo (usada em feature_selection) para o nome da classe
-# widget correspondente (usada como chave em modules.IMPORT_ERRORS).
-MODULE_KEY_TO_WIDGET_CLASS = {
-    "extrator": "CoupaExtractorWidget",
-    "downloader": "OrcamentoDownloaderWidget",
-    "pdf": "PedidoPdfGeneratorWidget",
-    "renomeador": "RenomeadorWidget",
-    "organizador": "OrganizadorWidget",
-    "email": "EmailSenderWidget",
-    "perfis": "ProfileManagerWidget",
-}
+class ModuleSpec(NamedTuple):
+    """Descreve uma aba/módulo do framework - fonte única de verdade.
+
+    widget_class pode ser None se o import falhou (ver modules/__init__.py);
+    class_name fica separado porque nesse caso não dá pra pegar o nome a
+    partir da classe. class_name também é a chave usada em IMPORT_ERRORS.
+    attr é o nome do atributo em FrameworkApp (ex: self.tab_coupa) - outros
+    módulos (ui_coupa.py, DataBus) acessam a instância por esse nome.
+    """
+
+    key: str
+    attr: str
+    widget_class: Optional[type]
+    class_name: str
+    label: str
+
+
+# Única lista com todos os módulos/abas do framework. Adicionar ou remover um
+# módulo só exige editar esta lista - instanciação, título da aba, mapeamento
+# de erro de import e o painel de status (🧩) são todos derivados dela.
+MODULES: list[ModuleSpec] = [
+    ModuleSpec("extrator", "tab_coupa", CoupaExtractorWidget, "CoupaExtractorWidget", "📦 Extrator Inteligente"),
+    ModuleSpec(
+        "downloader", "tab_downloader", OrcamentoDownloaderWidget,
+        "OrcamentoDownloaderWidget", "📥 Baixador de Orçamentos",
+    ),
+    ModuleSpec(
+        "pdf", "tab_pdf_generator", PedidoPdfGeneratorWidget,
+        "PedidoPdfGeneratorWidget", "📄 Gerador de PDF de Pedidos",
+    ),
+    ModuleSpec("renomeador", "tab_renomeador", RenomeadorWidget, "RenomeadorWidget", "📝 Renomeador"),
+    ModuleSpec("organizador", "tab_organizador", OrganizadorWidget, "OrganizadorWidget", "🗂️ Organizador"),
+    ModuleSpec("email", "tab_email_sender", EmailSenderWidget, "EmailSenderWidget", "📧 Disparo de E-mails"),
+    ModuleSpec(
+        "perfis", "tab_manage_profiles", ProfileManagerWidget,
+        "ProfileManagerWidget", "👥 Gerenciar Perfis",
+    ),
+]
+
+_MODULES_BY_KEY = {module.key: module for module in MODULES}
+
+
+def _resolve_module_error(module_key: str) -> Optional[str]:
+    """Erro de import salvo para este módulo, se houver.
+
+    IMPORT_ERRORS pode estar preenchido pela chave da classe widget (falha
+    durante `from modules import ...`) ou pela module_key (falha ao
+    instanciar em _safe_instantiate), então checamos as duas.
+    """
+    class_name = _MODULES_BY_KEY[module_key].class_name
+    return IMPORT_ERRORS.get(class_name) or IMPORT_ERRORS.get(module_key)
 
 
 def build_tab_title(module_key: str, enabled: bool) -> str:
-    titles = {
-        "extrator": "📦 Extrator Inteligente",
-        "downloader": "📥 Baixador de Orçamentos",
-        "pdf": "📄 Gerador de PDF de Pedidos",
-        "renomeador": "📝 Renomeador",
-        "organizador": "🗂️ Organizador",
-        "email": "📧 Disparo de E-mails",
-        "perfis": "👥 Gerenciar Perfis",
-    }
-    base_title = titles.get(module_key, module_key)
+    base_title = _MODULES_BY_KEY[module_key].label
     return f"🔒 {base_title}" if not enabled else base_title
 
 
@@ -299,61 +331,19 @@ class FrameworkApp(QMainWindow):
         self.status_bar.addWidget(self.lbl_status)
         self.setStatusBar(self.status_bar)
 
-        # Instanciação das Abas
+        # Instanciação das abas + painel de status (botão "🧩 Painel" no header).
         # Importante: só instanciamos se a classe realmente importou (não é None).
         # Se um widget falhou ao importar (dependência ausente no PC, por ex.),
         # ele cai automaticamente na aba bloqueada em vez de derrubar o app inteiro.
-        self.tab_coupa = self._safe_instantiate(CoupaExtractorWidget, "extrator")
-        self.tab_downloader = self._safe_instantiate(OrcamentoDownloaderWidget, "downloader")
-        self.tab_pdf_generator = self._safe_instantiate(PedidoPdfGeneratorWidget, "pdf")
-        self.tab_renomeador = self._safe_instantiate(RenomeadorWidget, "renomeador")
-        self.tab_organizador = self._safe_instantiate(OrganizadorWidget, "organizador")
-        self.tab_email_sender = self._safe_instantiate(EmailSenderWidget, "email")
-        self.tab_manage_profiles = self._safe_instantiate(ProfileManagerWidget, "perfis")
-
-        # Adiciona os módulos ao Framework
-        if self.tab_coupa is not None:
-            self.tab_widget.addTab(self.tab_coupa, "📦  Extrator Inteligente")
-        else:
-            self._add_locked_tab("extrator", "📦 Extrator Inteligente")
-        if self.tab_downloader is not None:
-            self.tab_widget.addTab(self.tab_downloader, "📥  Baixador de Orçamentos")
-        else:
-            self._add_locked_tab("downloader", "📥 Baixador de Orçamentos")
-        if self.tab_pdf_generator is not None:
-            self.tab_widget.addTab(self.tab_pdf_generator, "📄  Gerador de PDF de Pedidos")
-        else:
-            self._add_locked_tab("pdf", "📄 Gerador de PDF de Pedidos")
-        if self.tab_renomeador is not None:
-            self.tab_widget.addTab(self.tab_renomeador, "📝  Renomeador")
-        else:
-            self._add_locked_tab("renomeador", "📝 Renomeador")
-        if self.tab_organizador is not None:
-            self.tab_widget.addTab(self.tab_organizador, "🗂️  Organizador")
-        else:
-            self._add_locked_tab("organizador", "🗂️ Organizador")
-        if self.tab_email_sender is not None:
-            self.tab_widget.addTab(self.tab_email_sender, "📧  Disparo de E-mails")
-        else:
-            self._add_locked_tab("email", "📧 Disparo de E-mails")
-        if self.tab_manage_profiles is not None:
-            self.tab_widget.addTab(self.tab_manage_profiles, "👥  Gerenciar Perfis")
-        else:
-            self._add_locked_tab("perfis", "👥 Gerenciar Perfis")
-
-        # Painel de status (botão "🧩 Painel" no header): resume pra cada
-        # módulo se está ativo, com erro ao carregar, ou não instalado -
-        # mesma detecção usada pelas abas bloqueadas (_add_locked_tab),
-        # só que reunida numa lista pra dar uma visão geral de uma vez.
-        self._module_states = [
-            self._build_module_state("extrator", "📦 Extrator Inteligente", self.tab_coupa),
-            self._build_module_state("downloader", "📥 Baixador de Orçamentos", self.tab_downloader),
-            self._build_module_state("pdf", "📄 Gerador de PDF de Pedidos", self.tab_pdf_generator),
-            self._build_module_state("renomeador", "📝 Renomeador", self.tab_renomeador),
-            self._build_module_state("organizador", "🗂️ Organizador", self.tab_organizador),
-            self._build_module_state("email", "📧 Disparo de E-mails", self.tab_email_sender),
-            self._build_module_state("perfis", "👥 Gerenciar Perfis", self.tab_manage_profiles),
-        ]
+        self._module_states = []
+        for module in MODULES:
+            instance = self._safe_instantiate(module.widget_class, module.key)
+            setattr(self, module.attr, instance)
+            if instance is not None:
+                self.tab_widget.addTab(instance, module.label)
+            else:
+                self._add_locked_tab(module.key)
+            self._module_states.append(self._build_module_state(module.key, module.label, instance))
 
         # Conectar troca de aba para atualizar status
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -373,8 +363,7 @@ class FrameworkApp(QMainWindow):
     def _build_module_state(module_key: str, label: str, tab_widget) -> dict:
         if tab_widget is not None:
             return {"key": module_key, "label": label, "status": "ativo"}
-        widget_class_name = MODULE_KEY_TO_WIDGET_CLASS.get(module_key, module_key)
-        if IMPORT_ERRORS.get(widget_class_name) or IMPORT_ERRORS.get(module_key):
+        if _resolve_module_error(module_key):
             return {"key": module_key, "label": label, "status": "erro"}
         return {"key": module_key, "label": label, "status": "nao_instalado"}
 
@@ -412,9 +401,9 @@ class FrameworkApp(QMainWindow):
             print(f"[ERRO] Falha ao inicializar o módulo '{module_key}':\n{error_text}")
             return None
 
-    def _add_locked_tab(self, module_key: str, label: str):
-        widget_class_name = MODULE_KEY_TO_WIDGET_CLASS.get(module_key, module_key)
-        error_detail = IMPORT_ERRORS.get(widget_class_name) or IMPORT_ERRORS.get(module_key)
+    def _add_locked_tab(self, module_key: str):
+        label = _MODULES_BY_KEY[module_key].label
+        error_detail = _resolve_module_error(module_key)
         widget = LockedModuleWidget(self, module_key, label, error_detail=error_detail)
         self.tab_widget.addTab(widget, build_tab_title(module_key, False))
 

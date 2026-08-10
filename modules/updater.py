@@ -58,17 +58,22 @@ def _is_newer_version(latest_tag: str, current_version: str) -> bool:
     return latest > current
 
 
-def _run_installer_and_restart(installer_path: str):
+def _run_installer_and_restart(installer_path: str, parent_widget=None):
     """Dispara o instalador silenciosamente e fecha o app atual.
 
     Compartilhado pelo fluxo de atualização automática e pelo fluxo manual de
     instalar uma versão específica (rollback) - ambos terminam do mesmo jeito.
     """
-    log_path = build_installer_log_path("installer_update")
-    subprocess.Popen(
-        [installer_path, "/SILENT", "/CLOSEAPPLICATIONS", "/CURRENTUSER", f"/LOG={log_path}"],
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-    )
+    try:
+        log_path = build_installer_log_path("installer_update")
+        subprocess.Popen(
+            [installer_path, "/SILENT", "/CLOSEAPPLICATIONS", "/CURRENTUSER", f"/LOG={log_path}"],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+    except OSError as exc:
+        logger.exception("Falha ao iniciar o instalador: %s", exc)
+        QMessageBox.critical(parent_widget, "Erro ao atualizar", f"Não foi possível iniciar o instalador: {exc}")
+        return
     QApplication.quit()
 
 
@@ -90,7 +95,7 @@ class _CheckThread(QThread):
             asset_url = next(
                 (
                     asset.get("browser_download_url")
-                    for asset in data.get("assets", [])
+                    for asset in data.get("assets") or []
                     if isinstance(asset, dict) and asset.get("name", "").endswith(".exe")
                 ),
                 None,
@@ -139,6 +144,44 @@ class _DownloadThread(QThread):
             self.error.emit(str(exc))
 
 
+class _DownloadProgressFlow(QObject):
+    """Baixa um asset com diálogo de progresso e dispara o instalador ao final.
+
+    Compartilhado por UpdateManager e VersionManager - ambos baixam um asset do
+    GitHub, mostram uma barra de progresso modal e, ao terminar, rodam o mesmo
+    instalador silencioso; só muda o texto do diálogo e o asset de origem.
+    """
+
+    error = pyqtSignal(str)
+
+    def __init__(self, parent_widget):
+        super().__init__(parent_widget)
+        self._parent_widget = parent_widget
+        self._progress_dlg = None
+        self._download_thread = None
+
+    def start(self, asset_url: str, dialog_title: str, dialog_label: str):
+        self._progress_dlg = QProgressDialog(dialog_label, None, 0, 100, self._parent_widget)
+        self._progress_dlg.setWindowTitle(dialog_title)
+        self._progress_dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        self._progress_dlg.setCancelButton(None)
+        self._progress_dlg.show()
+
+        self._download_thread = _DownloadThread(asset_url)
+        self._download_thread.progress.connect(self._progress_dlg.setValue)
+        self._download_thread.finished.connect(self._on_downloaded)
+        self._download_thread.error.connect(self._on_error)
+        self._download_thread.start()
+
+    def _on_downloaded(self, path: str):
+        self._progress_dlg.close()
+        _run_installer_and_restart(path, self._parent_widget)
+
+    def _on_error(self, err: str):
+        self._progress_dlg.close()
+        self.error.emit(err)
+
+
 class UpdateManager(QObject):
     # Emitido quando existe atualização disponível mas o usuário optou por não
     # instalar agora (ou uma tentativa de download falhou) - carrega o rótulo
@@ -151,7 +194,7 @@ class UpdateManager(QObject):
         self._parent_widget = parent
         self._check_thread = _CheckThread()
         self._check_thread.update_found.connect(self._on_update_found)
-        self._download_thread = None
+        self._flow = None
         self._latest_tag = ""
         self._asset_url = ""
 
@@ -196,24 +239,11 @@ class UpdateManager(QObject):
         self._start_download()
 
     def _start_download(self):
-        self._progress_dlg = QProgressDialog("Baixando atualização...", None, 0, 100, self._parent_widget)
-        self._progress_dlg.setWindowTitle("Atualizando")
-        self._progress_dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self._progress_dlg.setCancelButton(None)
-        self._progress_dlg.show()
-
-        self._download_thread = _DownloadThread(self._asset_url)
-        self._download_thread.progress.connect(self._progress_dlg.setValue)
-        self._download_thread.finished.connect(self._on_downloaded)
-        self._download_thread.error.connect(self._on_error)
-        self._download_thread.start()
-
-    def _on_downloaded(self, path: str):
-        self._progress_dlg.close()
-        _run_installer_and_restart(path)
+        self._flow = _DownloadProgressFlow(self._parent_widget)
+        self._flow.error.connect(self._on_error)
+        self._flow.start(self._asset_url, "Atualizando", "Baixando atualização...")
 
     def _on_error(self, err: str):
-        self._progress_dlg.close()
         QMessageBox.critical(self._parent_widget, "Erro na atualização", f"Falha ao baixar: {err}")
         # Reoferece o botão manual para o usuário poder tentar de novo sem
         # precisar reabrir o aplicativo.
@@ -243,7 +273,7 @@ class _ListReleasesThread(QThread):
                 asset_url = next(
                     (
                         asset.get("browser_download_url")
-                        for asset in item.get("assets", [])
+                        for asset in item.get("assets") or []
                         if isinstance(asset, dict) and asset.get("name", "").endswith(".exe")
                     ),
                     None,
@@ -281,8 +311,7 @@ class VersionManager(QObject):
         super().__init__(parent)
         self._parent_widget = parent
         self._list_thread = None
-        self._download_thread = None
-        self._progress_dlg = None
+        self._flow = None
 
     def list_releases(self):
         self._list_thread = _ListReleasesThread()
@@ -302,22 +331,9 @@ class VersionManager(QObject):
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
-        self._progress_dlg = QProgressDialog(f"Baixando {label}...", None, 0, 100, self._parent_widget)
-        self._progress_dlg.setWindowTitle("Instalando versão")
-        self._progress_dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self._progress_dlg.setCancelButton(None)
-        self._progress_dlg.show()
-
-        self._download_thread = _DownloadThread(asset_url)
-        self._download_thread.progress.connect(self._progress_dlg.setValue)
-        self._download_thread.finished.connect(self._on_downloaded)
-        self._download_thread.error.connect(self._on_error)
-        self._download_thread.start()
-
-    def _on_downloaded(self, path: str):
-        self._progress_dlg.close()
-        _run_installer_and_restart(path)
+        self._flow = _DownloadProgressFlow(self._parent_widget)
+        self._flow.error.connect(self._on_error)
+        self._flow.start(asset_url, "Instalando versão", f"Baixando {label}...")
 
     def _on_error(self, err: str):
-        self._progress_dlg.close()
         QMessageBox.critical(self._parent_widget, "Erro ao instalar versão", f"Falha ao baixar: {err}")
