@@ -247,26 +247,22 @@ class FrameworkApp(QMainWindow):
         self.setMinimumSize(1024, 720)
 
         # --- Header / Top Bar ---
+        # Sem stylesheet inline aqui - estilizado pela folha global
+        # (QWidget#appHeader / QLabel#appHeaderTitle em styles.py), mesmo
+        # motivo do ajuste na status bar: cor/estilo hardcoded direto no
+        # widget fica fora da paleta central e mais difícil de manter.
         header = QWidget()
         header.setObjectName("appHeader")
         header.setFixedHeight(56)
-        header.setStyleSheet("""
-            QWidget#appHeader {
-                background: #161b22;
-                border-bottom: 2px solid #1f6feb;
-            }
-        """)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 0, 16, 0)
 
         self.lbl_header_title = QLabel("\U0001f310 Coupa Framework - Automação de Suprimentos")
-        self.lbl_header_title.setStyleSheet("""
-            color: #f0f6fc;
-            font-size: 17px;
-            font-weight: 700;
-        """)
-        header_layout.addWidget(self.lbl_header_title)
-        header_layout.addStretch()
+        self.lbl_header_title.setObjectName("appHeaderTitle")
+        # Stretch=1: o título é o texto mais longo do header - sem prioridade
+        # de espaço, ele é o primeiro a ser espremido/cortado quando a janela
+        # fica estreita (perto do mínimo de 1024px) com os botões ao lado.
+        header_layout.addWidget(self.lbl_header_title, 1)
 
         # Ordem no header, da esquerda pra direita: Nome - Atualização (só
         # quando pendente) - Painel - Versões. O botão de atualização fica

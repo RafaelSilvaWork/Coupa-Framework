@@ -109,6 +109,19 @@ QLabel#appStatusBarLabel {
     padding: 4px 16px;
 }
 
+/* --- Header / Barra Superior --- */
+QWidget#appHeader {
+    background: #161b22;
+    border-bottom: 2px solid #1f6feb;
+}
+
+QLabel#appHeaderTitle {
+    color: #f0f6fc;
+    font-size: 17px;
+    font-weight: 700;
+    padding: 2px 0px;
+}
+
 /* --- Tab Widget (Navegação Principal) --- */
 QTabWidget::pane {
     border: none;
