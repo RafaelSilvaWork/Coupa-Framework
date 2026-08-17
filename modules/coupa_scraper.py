@@ -172,31 +172,34 @@ class CoupaScraper:
                 await page.wait_for_selector("body", state="attached", timeout=5000)
 
                 # A confirmação de pedido emitido aparece na barra de status
-                # (#msgbar) do Coupa. Esse elemento não é recriado a cada
-                # navegação: se não for limpo antes de checar cada requisição,
-                # o texto de uma requisição anterior ("PO nº X Emitido")
-                # permanece visível e é erroneamente atribuído à requisição
-                # atual, mesmo quando ela não tem pedido próprio.
+                # (#msgbar) do Coupa, já carregada junto com o HTML da
+                # própria página - não é reescrita a cada verificação. Por
+                # isso a leitura tem que vir ANTES de qualquer limpeza: limpar
+                # primeiro (como uma versão anterior deste código fazia)
+                # apaga esse conteúdo sem que ele seja recriado, fazendo
+                # requisições com pedido real saírem como "sem pedido". Só
+                # depois de ler é que a barra é limpa, para não vazar esse
+                # texto para a checagem da PRÓXIMA requisição (que é o bug
+                # original: pedido de uma requisição anterior "grudando" na
+                # seguinte, já que #msgbar não é recriado entre navegações).
+                seletor_msgbar_com_po = "#msgbar:has-text('PO nº')"
+                try:
+                    await page.wait_for_selector(seletor_msgbar_com_po, state="attached", timeout=2500)
+                except Exception:
+                    pass
+
+                pedido_texto = ""
+                msgbar_elemento = await page.query_selector("#msgbar")
+                if msgbar_elemento:
+                    raw_text = await msgbar_elemento.inner_text()
+                    match_po = re.search(r'PO\s*nº\s*\d+', raw_text, re.IGNORECASE)
+                    if match_po:
+                        pedido_texto = match_po.group(0)
+
                 await page.evaluate(
                     "() => { const el = document.getElementById('msgbar'); "
                     "if (el) el.textContent = ''; }"
                 )
-
-                pedido_texto = ""
-                try:
-                    await page.wait_for_function(
-                        "() => { const el = document.getElementById('msgbar'); "
-                        "return !!(el && /PO\\s*n[ºo]\\s*\\d+/i.test(el.textContent)); }",
-                        timeout=2500,
-                    )
-                    msgbar_texto = await page.eval_on_selector(
-                        "#msgbar", "(el) => el.textContent"
-                    )
-                    match_po = re.search(r'PO\s*nº\s*\d+', msgbar_texto, re.IGNORECASE)
-                    if match_po:
-                        pedido_texto = match_po.group(0)
-                except Exception:
-                    pass
 
                 if not pedido_texto:
                     log_callback(f"⚠️ Requisição #{req} ignorada: Nenhum pedido emitido.")

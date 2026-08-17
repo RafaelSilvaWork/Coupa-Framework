@@ -58,23 +58,25 @@ def _is_newer_version(latest_tag: str, current_version: str) -> bool:
     return latest > current
 
 
-def _run_installer_and_restart(installer_path: str, parent_widget=None):
-    """Dispara o instalador silenciosamente e fecha o app atual.
+def _start_installer(installer_path: str, parent_widget=None) -> Optional[subprocess.Popen]:
+    """Dispara o instalador silenciosamente, sem fechar o app atual.
 
     Compartilhado pelo fluxo de atualização automática e pelo fluxo manual de
     instalar uma versão específica (rollback) - ambos terminam do mesmo jeito.
+    Quem chama é responsável por aguardar o processo e fechar o app (ver
+    _InstallWaitThread) - não fazemos isso aqui para o diálogo de progresso
+    poder continuar visível durante a instalação.
     """
     try:
         log_path = build_installer_log_path("installer_update")
-        subprocess.Popen(
+        return subprocess.Popen(
             [installer_path, "/SILENT", "/CLOSEAPPLICATIONS", "/CURRENTUSER", f"/LOG={log_path}"],
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
     except OSError as exc:
         logger.exception("Falha ao iniciar o instalador: %s", exc)
         QMessageBox.critical(parent_widget, "Erro ao atualizar", f"Não foi possível iniciar o instalador: {exc}")
-        return
-    QApplication.quit()
+        return None
 
 
 class _CheckThread(QThread):
@@ -144,12 +146,38 @@ class _DownloadThread(QThread):
             self.error.emit(str(exc))
 
 
+class _InstallWaitThread(QThread):
+    """Aguarda o processo do instalador terminar - rede de segurança.
+
+    Na prática, installer.iss tem CloseApplications=yes e o instalador é
+    chamado com /CLOSEAPPLICATIONS: assim que ele precisa sobrescrever
+    CoupaFramework.exe, o Restart Manager do Windows encerra este processo
+    sozinho, e essa thread nunca chega a emitir finished_wait. Ela só importa
+    se isso não acontecer (ex: instalação falhou antes de chegar lá) - nesse
+    caso fechamos o diálogo e o app manualmente quando o instalador retornar.
+    """
+
+    finished_wait = pyqtSignal()
+
+    def __init__(self, process: subprocess.Popen):
+        super().__init__()
+        self._process = process
+
+    def run(self):
+        self._process.wait()
+        self.finished_wait.emit()
+
+
 class _DownloadProgressFlow(QObject):
     """Baixa um asset com diálogo de progresso e dispara o instalador ao final.
 
     Compartilhado por UpdateManager e VersionManager - ambos baixam um asset do
     GitHub, mostram uma barra de progresso modal e, ao terminar, rodam o mesmo
-    instalador silencioso; só muda o texto do diálogo e o asset de origem.
+    instalador silencioso; só muda o texto do diálogo e o asset de origem. O
+    mesmo diálogo permanece aberto (trocando para uma fase indeterminada
+    "Instalando...") até o instalador assumir - em vez de fechar o app assim
+    que o download termina, o que deixava um intervalo sem nenhuma janela
+    visível enquanto o instalador rodava em segundo plano.
     """
 
     error = pyqtSignal(str)
@@ -159,6 +187,7 @@ class _DownloadProgressFlow(QObject):
         self._parent_widget = parent_widget
         self._progress_dlg = None
         self._download_thread = None
+        self._install_wait_thread = None
 
     def start(self, asset_url: str, dialog_title: str, dialog_label: str):
         self._progress_dlg = QProgressDialog(dialog_label, None, 0, 100, self._parent_widget)
@@ -174,8 +203,23 @@ class _DownloadProgressFlow(QObject):
         self._download_thread.start()
 
     def _on_downloaded(self, path: str):
+        # O instalador silencioso não expõe percentual de progresso, então a
+        # barra vira indeterminada (setRange(0, 0)) para a fase de instalação.
+        self._progress_dlg.setLabelText("Instalando...")
+        self._progress_dlg.setRange(0, 0)
+
+        process = _start_installer(path, self._parent_widget)
+        if process is None:
+            self._progress_dlg.close()
+            return
+
+        self._install_wait_thread = _InstallWaitThread(process)
+        self._install_wait_thread.finished_wait.connect(self._on_install_finished)
+        self._install_wait_thread.start()
+
+    def _on_install_finished(self):
         self._progress_dlg.close()
-        _run_installer_and_restart(path, self._parent_widget)
+        QApplication.quit()
 
     def _on_error(self, err: str):
         self._progress_dlg.close()
