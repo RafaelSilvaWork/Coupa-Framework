@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 logger = logging.getLogger(__name__)
 
 GITHUB_REPO = "DuduProKill/Coupa-Framework"
-CURRENT_VERSION = "1.2.1"
+CURRENT_VERSION = "1.2.2"
 
 
 def build_installer_log_path(prefix: str) -> str:
