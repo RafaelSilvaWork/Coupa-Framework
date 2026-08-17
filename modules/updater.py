@@ -25,6 +25,10 @@ CURRENT_VERSION = "1.2.2"
 CACHE_TTL_SECONDS = 900
 
 
+def _app_data_dir() -> Path:
+    return Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "CoupaFramework"
+
+
 def build_installer_log_path(prefix: str) -> str:
     """Caminho de log para uma execução silenciosa do instalador (flag /LOG).
 
@@ -33,14 +37,14 @@ def build_installer_log_path(prefix: str) -> str:
     só o que aparecer na tela, se aparecer. Usa a mesma pasta de logs que
     modules/logger.py já usa para o app em si.
     """
-    log_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "CoupaFramework" / "logs"
+    log_dir = _app_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return str(log_dir / f"{prefix}_{timestamp}.log")
 
 
 def _cache_dir() -> Path:
-    return Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "CoupaFramework" / "cache"
+    return _app_data_dir() / "cache"
 
 
 def _read_cache(key: str):
@@ -361,9 +365,13 @@ class _ListReleasesThread(QThread):
     releases_loaded = pyqtSignal(list)  # lista de dicts: tag, label, asset_url, published_at
     error = pyqtSignal(str)
 
+    def __init__(self, force: bool = False):
+        super().__init__()
+        self._force = force
+
     def run(self):
         try:
-            data = _read_cache("releases_list")
+            data = None if self._force else _read_cache("releases_list")
             if data is None:
                 response = requests.get(
                     f"https://api.github.com/repos/{GITHUB_REPO}/releases",
@@ -423,8 +431,8 @@ class VersionManager(QObject):
         self._list_thread = None
         self._flow = None
 
-    def list_releases(self):
-        self._list_thread = _ListReleasesThread()
+    def list_releases(self, force: bool = False):
+        self._list_thread = _ListReleasesThread(force=force)
         self._list_thread.releases_loaded.connect(self.releases_loaded)
         self._list_thread.error.connect(self.list_error)
         self._list_thread.start()

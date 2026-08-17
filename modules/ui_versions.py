@@ -32,9 +32,19 @@ class VersionHistoryDialog(QDialog):
         outer.setContentsMargins(20, 20, 20, 20)
         outer.setSpacing(12)
 
+        title_row = QHBoxLayout()
         title = QLabel("Versões publicadas")
         title.setObjectName("titleLabel")
-        outer.addWidget(title)
+        title_row.addWidget(title, 1)
+
+        self.btn_refresh = QPushButton("🔄 Atualizar")
+        self.btn_refresh.setToolTip(
+            "A lista fica em cache por até 15 minutos - use aqui para forçar "
+            "uma checagem imediata (ex: acabou de publicar uma versão nova)."
+        )
+        self.btn_refresh.clicked.connect(self._refresh_releases)
+        title_row.addWidget(self.btn_refresh)
+        outer.addLayout(title_row)
 
         subtitle = QLabel(
             "Escolha uma versão para instalar. Instalar uma versão mais antiga "
@@ -57,6 +67,13 @@ class VersionHistoryDialog(QDialog):
 
         self._version_manager.list_releases()
 
+    def _refresh_releases(self):
+        self.btn_refresh.setEnabled(False)
+        self._clear_list()
+        self.lbl_status.setVisible(True)
+        set_status(self.lbl_status, "muted", "Carregando versões...")
+        self._version_manager.list_releases(force=True)
+
     def _clear_list(self):
         # Remove tudo menos o addStretch() do final (mantido para as linhas
         # ficarem no topo em vez de se espalharem pela área toda).
@@ -67,9 +84,11 @@ class VersionHistoryDialog(QDialog):
                 widget.deleteLater()
 
     def _on_list_error(self, err: str):
+        self.btn_refresh.setEnabled(True)
         set_status(self.lbl_status, "error", f"❌ Não foi possível carregar as versões: {err}")
 
     def _on_releases_loaded(self, releases: list):
+        self.btn_refresh.setEnabled(True)
         self._clear_list()
         if not releases:
             set_status(self.lbl_status, "muted", "Nenhuma versão publicada encontrada.")

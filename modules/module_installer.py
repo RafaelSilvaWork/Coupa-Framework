@@ -7,13 +7,13 @@ import requests
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from modules.updater import (
+    GITHUB_REPO,
     _describe_github_api_error,
     _read_cache,
     _write_cache,
     build_installer_log_path,
 )
 
-GITHUB_REPO = "RafaelSilvaWork/Coupa-Framework"
 LOCAL_INSTALLER_NAMES = ("CoupaFramework_Setup_v1.1.2.exe", "installer.exe")
 
 
