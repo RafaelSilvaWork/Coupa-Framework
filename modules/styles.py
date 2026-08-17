@@ -106,6 +106,7 @@ QStatusBar {
 }
 
 QLabel#appStatusBarLabel {
+    background: transparent;
     color: #8b949e;
     font-size: 12px;
     font-weight: 500;
@@ -119,6 +120,7 @@ QWidget#appHeader {
 }
 
 QLabel#appHeaderTitle {
+    background: transparent;
     color: #f0f6fc;
     font-size: 17px;
     font-weight: 700;
