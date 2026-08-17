@@ -2,7 +2,7 @@
 AppName=Coupa Framework - Automação de Suprimentos
 AppVersion=1.2.2
 AppPublisher=Coupa Framework
-AppPublisherURL=https://github.com/DuduProKill/Coupa-Framework
+AppPublisherURL=https://github.com/RafaelSilvaWork/Coupa-Framework
 DefaultDirName={localappdata}\CoupaFramework
 DefaultGroupName=Coupa Framework
 OutputDir=installer_output

@@ -23,7 +23,13 @@ class _FakeResponse:
         return self._payload
 
 
-def test_list_releases_skips_drafts_and_releases_without_exe_asset(qt_app, monkeypatch):
+def test_list_releases_skips_drafts_and_releases_without_exe_asset(qt_app, monkeypatch, tmp_path):
+    # Isola o cache de respostas da API (ver modules/updater.py) numa pasta
+    # temporária - sem isso, a resposta "de sucesso" fica gravada no
+    # %APPDATA% real da máquina e o teste seguinte (que espera uma falha de
+    # rede) lê esse cache em vez de bater no requests.get mockado.
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+
     payload = [
         {
             "tag_name": "v1.2.0",
@@ -60,7 +66,9 @@ def test_list_releases_skips_drafts_and_releases_without_exe_asset(qt_app, monke
     assert releases[0]["asset_url"] == "https://example/v1.2.0.exe"
 
 
-def test_list_releases_emits_error_on_request_failure(qt_app, monkeypatch):
+def test_list_releases_emits_error_on_request_failure(qt_app, monkeypatch, tmp_path):
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+
     def _raise(*a, **k):
         raise requests.exceptions.ConnectionError("sem rede")
 

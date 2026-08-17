@@ -6,9 +6,14 @@ from pathlib import Path
 import requests
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from modules.updater import build_installer_log_path
+from modules.updater import (
+    _describe_github_api_error,
+    _read_cache,
+    _write_cache,
+    build_installer_log_path,
+)
 
-GITHUB_REPO = "DuduProKill/Coupa-Framework"
+GITHUB_REPO = "RafaelSilvaWork/Coupa-Framework"
 LOCAL_INSTALLER_NAMES = ("CoupaFramework_Setup_v1.1.2.exe", "installer.exe")
 
 
@@ -32,7 +37,10 @@ class ModuleInstallWorker(QThread):
     def run(self):
         try:
             installer_path = self._find_installer()
-        except (requests.RequestException, OSError, ValueError, KeyError) as exc:
+        except requests.RequestException as exc:
+            self.finished_signal.emit(False, f"Falha ao obter o instalador: {_describe_github_api_error(exc)}")
+            return
+        except (OSError, ValueError, KeyError) as exc:
             self.finished_signal.emit(False, f"Falha ao obter o instalador: {exc}")
             return
 
@@ -73,13 +81,16 @@ class ModuleInstallWorker(QThread):
                 return str(candidate)
 
         self.progress_signal.emit(-1, "Verificando última versão disponível...")
-        response = requests.get(
-            f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
-            timeout=10,
-            headers={"Accept": "application/vnd.github+json"},
-        )
-        response.raise_for_status()
-        data = response.json()
+        data = _read_cache("latest_release")
+        if data is None:
+            response = requests.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+                timeout=10,
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            response.raise_for_status()
+            data = response.json()
+            _write_cache("latest_release", data)
         asset = next(
             (
                 asset for asset in data.get("assets", [])

@@ -1,7 +1,9 @@
+import json
 import logging
 import os
 import subprocess
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -12,8 +14,15 @@ from PyQt6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 
 logger = logging.getLogger(__name__)
 
-GITHUB_REPO = "DuduProKill/Coupa-Framework"
+GITHUB_REPO = "RafaelSilvaWork/Coupa-Framework"
 CURRENT_VERSION = "1.2.2"
+
+# Suaviza o limite de 60 requisições/hora sem autenticação da API do GitHub -
+# fácil de estourar em redes com IP compartilhado, onde várias pessoas abrem
+# o app (ou a tela de versões) ao mesmo tempo. Só encurta o tempo até uma
+# atualização recém-publicada ser percebida; não afeta o fluxo de download/
+# instalação em si.
+CACHE_TTL_SECONDS = 900
 
 
 def build_installer_log_path(prefix: str) -> str:
@@ -28,6 +37,57 @@ def build_installer_log_path(prefix: str) -> str:
     log_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return str(log_dir / f"{prefix}_{timestamp}.log")
+
+
+def _cache_dir() -> Path:
+    return Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "CoupaFramework" / "cache"
+
+
+def _read_cache(key: str):
+    """Lê uma resposta da API do GitHub cacheada há menos de CACHE_TTL_SECONDS.
+
+    Retorna None tanto se não houver cache quanto se ele estiver expirado -
+    nos dois casos o chamador deve buscar na rede normalmente.
+    """
+    try:
+        entry = json.loads((_cache_dir() / f"{key}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if time.time() - entry.get("cached_at", 0) > CACHE_TTL_SECONDS:
+        return None
+    return entry.get("payload")
+
+
+def _write_cache(key: str, payload) -> None:
+    try:
+        cache_dir = _cache_dir()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / f"{key}.json").write_text(
+            json.dumps({"cached_at": time.time(), "payload": payload}),
+            encoding="utf-8",
+        )
+    except OSError:
+        logger.warning("Não foi possível gravar cache da API do GitHub (%s)", key)
+
+
+def _describe_github_api_error(exc: Exception) -> str:
+    """Traduz erros comuns da API do GitHub para uma mensagem acionável.
+
+    Sem isso, um 403 de limite de requisições ou um 503 de instabilidade
+    aparecem pro usuário como texto cru de exceção HTTP, sem deixar claro se
+    o problema é a rede dele, algo no app, ou só o GitHub temporariamente
+    limitado/instável.
+    """
+    response = getattr(exc, "response", None)
+    if response is not None:
+        if response.status_code == 403 and response.headers.get("X-RateLimit-Remaining") == "0":
+            return (
+                "Limite de requisições do GitHub atingido (comum em redes com "
+                "IP compartilhado). Tente novamente em alguns minutos."
+            )
+        if response.status_code == 503:
+            return "O GitHub está instável no momento. Tente novamente em alguns minutos."
+    return str(exc)
 
 
 def _normalize_version(value: str) -> Optional[tuple[int, int, int]]:
@@ -84,13 +144,16 @@ class _CheckThread(QThread):
 
     def run(self):
         try:
-            response = requests.get(
-                f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
-                timeout=5,
-                headers={"Accept": "application/vnd.github+json"},
-            )
-            response.raise_for_status()
-            data = response.json()
+            data = _read_cache("latest_release")
+            if data is None:
+                response = requests.get(
+                    f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+                    timeout=5,
+                    headers={"Accept": "application/vnd.github+json"},
+                )
+                response.raise_for_status()
+                data = response.json()
+                _write_cache("latest_release", data)
             tag = data.get("tag_name", "")
             if not tag or not _is_newer_version(tag, CURRENT_VERSION):
                 return
@@ -105,7 +168,7 @@ class _CheckThread(QThread):
             if asset_url:
                 self.update_found.emit(tag, asset_url)
         except requests.RequestException as exc:
-            logger.exception("Falha ao verificar atualização no GitHub: %s", exc)
+            logger.exception("Falha ao verificar atualização no GitHub: %s", _describe_github_api_error(exc))
         except ValueError as exc:
             logger.exception("Resposta inválida da API do GitHub: %s", exc)
 
@@ -140,7 +203,7 @@ class _DownloadThread(QThread):
             self.finished.emit(tmp.name)
         except requests.RequestException as exc:
             logger.exception("Falha ao baixar atualização: %s", exc)
-            self.error.emit(str(exc))
+            self.error.emit(_describe_github_api_error(exc))
         except OSError as exc:
             logger.exception("Falha ao gravar arquivo temporário da atualização: %s", exc)
             self.error.emit(str(exc))
@@ -300,14 +363,17 @@ class _ListReleasesThread(QThread):
 
     def run(self):
         try:
-            response = requests.get(
-                f"https://api.github.com/repos/{GITHUB_REPO}/releases",
-                timeout=10,
-                headers={"Accept": "application/vnd.github+json"},
-                params={"per_page": 15},
-            )
-            response.raise_for_status()
-            data = response.json()
+            data = _read_cache("releases_list")
+            if data is None:
+                response = requests.get(
+                    f"https://api.github.com/repos/{GITHUB_REPO}/releases",
+                    timeout=10,
+                    headers={"Accept": "application/vnd.github+json"},
+                    params={"per_page": 15},
+                )
+                response.raise_for_status()
+                data = response.json()
+                _write_cache("releases_list", data)
 
             releases = []
             for item in data:
@@ -333,7 +399,7 @@ class _ListReleasesThread(QThread):
             self.releases_loaded.emit(releases)
         except requests.RequestException as exc:
             logger.exception("Falha ao listar versões no GitHub: %s", exc)
-            self.error.emit(str(exc))
+            self.error.emit(_describe_github_api_error(exc))
         except ValueError as exc:
             logger.exception("Resposta inválida da API do GitHub ao listar versões: %s", exc)
             self.error.emit(str(exc))

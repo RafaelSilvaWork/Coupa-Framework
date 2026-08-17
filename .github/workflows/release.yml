@@ -73,7 +73,37 @@ jobs:
               Write-Error "Instalador nao encontrado em installer_output\"
               exit 1
           }
-          gh release create $tag $installer.FullName `
-            --title "Coupa Framework $tag" `
-            --notes "Versao $tag. Baixe o instalador e execute. Se ja tiver instalado, atualiza automaticamente." `
-            --latest
+
+          # A API do GitHub as vezes responde com 503 "no server available"
+          # de forma transitoria (visto duas vezes seguidas em releases
+          # recentes) - tenta de novo com espera antes de falhar o job.
+          $maxAttempts = 5
+          $delaySeconds = 30
+          $success = $false
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+              if ($attempt -gt 1) {
+                  # Uma tentativa anterior pode ter criado a release mas falhado
+                  # no upload do instalador - remove antes de tentar de novo pra
+                  # "gh release create" nao falhar com "release already exists".
+                  gh release view $tag *> $null
+                  if ($LASTEXITCODE -eq 0) {
+                      gh release delete $tag --yes *> $null
+                  }
+                  Write-Host "Tentativa $attempt de $maxAttempts falhou - aguardando $delaySeconds s (provavel instabilidade do GitHub)..."
+                  Start-Sleep -Seconds $delaySeconds
+              }
+
+              gh release create $tag $installer.FullName `
+                --title "Coupa Framework $tag" `
+                --notes "Versao $tag. Baixe o instalador e execute. Se ja tiver instalado, atualiza automaticamente." `
+                --latest
+              if ($LASTEXITCODE -eq 0) {
+                  $success = $true
+                  break
+              }
+          }
+
+          if (-not $success) {
+              Write-Error "Falha ao publicar release apos $maxAttempts tentativas."
+              exit 1
+          }
