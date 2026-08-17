@@ -282,7 +282,7 @@ class FrameworkApp(QMainWindow):
         # neste PC (ver ModuleStatusDialog) - self._module_states é montado
         # mais abaixo, depois que as abas são instanciadas.
         self.btn_module_panel = QPushButton("🧩 Painel")
-        self.btn_module_panel.setObjectName("btnClear")
+        self.btn_module_panel.setObjectName("btnHeaderAction")
         self.btn_module_panel.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_module_panel.setToolTip("Ver quais módulos estão ativos neste PC")
         self.btn_module_panel.clicked.connect(self._open_module_panel)
@@ -292,7 +292,7 @@ class FrameworkApp(QMainWindow):
         # instalar qualquer uma delas (inclusive uma mais antiga - rollback
         # manual caso a versão atual tenha algum problema).
         self.btn_version_history = QPushButton("🕘 Versões")
-        self.btn_version_history.setObjectName("btnClear")
+        self.btn_version_history.setObjectName("btnHeaderAction")
         self.btn_version_history.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_version_history.setToolTip("Ver e instalar versões anteriores (rollback)")
         self.btn_version_history.clicked.connect(self._open_version_history)

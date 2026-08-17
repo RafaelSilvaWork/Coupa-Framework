@@ -95,8 +95,11 @@ QToolTip {
     font-size: 12px;
 }
 
+/* Header e status bar usam o mesmo fundo do app (#0d1117), não o tom
+   "painel" (#161b22) - senão viram duas faixas visivelmente mais claras que
+   destoam do resto da tela. A separação visual vem só das bordas. */
 QStatusBar {
-    background: #161b22;
+    background: #0d1117;
     color: #8b949e;
     border-top: 1px solid #30363d;
     font-size: 12px;
@@ -111,7 +114,7 @@ QLabel#appStatusBarLabel {
 
 /* --- Header / Barra Superior --- */
 QWidget#appHeader {
-    background: #161b22;
+    background: #0d1117;
     border-bottom: 2px solid #1f6feb;
 }
 
@@ -120,6 +123,27 @@ QLabel#appHeaderTitle {
     font-size: 17px;
     font-weight: 700;
     padding: 2px 0px;
+}
+
+/* Botões de ação do header (Painel, Versões) - sem borda "caixada" contra o
+   fundo do header como o #btnClear genérico tem; ficam discretos até o
+   hover, igual o título ao lado deles. */
+QPushButton#btnHeaderAction {
+    background: transparent;
+    border: 1px solid transparent;
+    color: #8b949e;
+    font-weight: 500;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    min-width: 28px;
+    min-height: 28px;
+}
+
+QPushButton#btnHeaderAction:hover {
+    background: #1c2128;
+    border-color: #3d444d;
+    color: #e6edf3;
 }
 
 /* --- Tab Widget (Navegação Principal) --- */
