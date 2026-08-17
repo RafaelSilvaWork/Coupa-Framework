@@ -1,12 +1,12 @@
 [Setup]
 AppName=Coupa Framework - Automação de Suprimentos
-AppVersion=1.2
+AppVersion=1.2.1
 AppPublisher=Coupa Framework
 AppPublisherURL=https://github.com/DuduProKill/Coupa-Framework
 DefaultDirName={localappdata}\CoupaFramework
 DefaultGroupName=Coupa Framework
 OutputDir=installer_output
-OutputBaseFilename=CoupaFramework_Setup_v1.2
+OutputBaseFilename=CoupaFramework_Setup_v1.2.1
 SetupIconFile=assets\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -15,9 +15,9 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesInstallIn64BitMode=x64
 UninstallDisplayIcon={app}\CoupaFramework.exe
-UninstallDisplayName=Coupa Framework v1.2
+UninstallDisplayName=Coupa Framework v1.2.1
 MinVersion=10.0
-VersionInfoVersion=1.2
+VersionInfoVersion=1.2.1
 VersionInfoCompany=Coupa Framework
 VersionInfoDescription=Coupa Framework - Automação de Suprimentos
 AppId={{B3F2A1D4-7E6C-4F8B-9A2D-1C5E8F3B7A9D}
