@@ -319,6 +319,10 @@ class FrameworkApp(QMainWindow):
         # do texto, porque QLabel não herda "color" do QStatusBar pai - por
         # isso o rótulo usava a cor genérica de QLabel em vez da paleta.
         self.status_bar = QStatusBar()
+        # Sem alça de redimensionar no canto - a janela já tem borda
+        # redimensionável nativa do Windows, essa alça extra do Qt só
+        # aparecia como um quadradinho solto sem função clara aqui.
+        self.status_bar.setSizeGripEnabled(False)
         self.lbl_status = QLabel("Pronto")
         self.lbl_status.setObjectName("appStatusBarLabel")
         # Stretch=1 para o rótulo ocupar o espaço disponível e não ficar preso
