@@ -72,11 +72,19 @@ class CoupaExtractorWidget(QWidget):
         self.btn_confirm_login.clicked.connect(self.confirm_login_and_start_extraction)
         left_panel.addWidget(self.btn_confirm_login)
 
-        self.btn_pause = QPushButton("\u23f8\ufe0f Pausar Extra\u00e7\u00e3o")
+        pause_cancel_layout = QHBoxLayout()
+        self.btn_pause = QPushButton("\u23f8\ufe0f Pausar")
         self.btn_pause.setObjectName("btnWarning")
         self.btn_pause.setEnabled(False)
-        self.btn_pause.clicked.connect(self.toggle_pause_automation)
-        left_panel.addWidget(self.btn_pause)
+        self.btn_pause.clicked.connect(self.confirm_toggle_pause)
+        pause_cancel_layout.addWidget(self.btn_pause, 1)
+
+        self.btn_cancel = QPushButton("\u274c Cancelar")
+        self.btn_cancel.setObjectName("btnDanger")
+        self.btn_cancel.setEnabled(False)
+        self.btn_cancel.clicked.connect(self.confirm_cancel_automation)
+        pause_cancel_layout.addWidget(self.btn_cancel, 1)
+        left_panel.addLayout(pause_cancel_layout)
 
         # --- Grupo de Fluxo Autom\u00e1tico ---
         fluxo_group = QGroupBox("\U0001f501 Fluxo Autom\u00e1tico (Modo Cadeia)")
@@ -225,7 +233,11 @@ class CoupaExtractorWidget(QWidget):
         self.btn_open_edge.setEnabled(False)
         self.btn_confirm_login.setEnabled(False)
         self.btn_pause.setEnabled(False)
-        self.btn_pause.setText("\u23f8\ufe0f Pausar Extra\u00e7\u00e3o")
+        self.btn_pause.setText("\u23f8\ufe0f Pausar")
+        # Cancelar j\u00e1 fica dispon\u00edvel a partir daqui (n\u00e3o s\u00f3 ap\u00f3s confirmar
+        # login) - \u00e9 justamente a etapa de abrir o Edge/aguardar login que
+        # pode travar sem nenhuma sa\u00edda al\u00e9m de fechar o app inteiro.
+        self.btn_cancel.setEnabled(True)
         self.btn_excel.setEnabled(False)
         self.btn_manage_profiles.setEnabled(False)
         self.combo_profiles.setEnabled(False)
@@ -274,26 +286,66 @@ class CoupaExtractorWidget(QWidget):
         self.btn_confirm_login.setEnabled(False)
         self.btn_pause.setEnabled(True)
 
+    def confirm_toggle_pause(self):
+        if not self.worker or not self.worker.isRunning():
+            return
+        pausado = self.worker.pause_event.is_set()
+        if pausado:
+            titulo, pergunta = "Retomar extra\u00e7\u00e3o", "Deseja retomar a extra\u00e7\u00e3o?"
+        else:
+            titulo, pergunta = (
+                "Pausar extra\u00e7\u00e3o",
+                "Deseja pausar a extra\u00e7\u00e3o? Ela ser\u00e1 pausada assim que a "
+                "requisi\u00e7\u00e3o atual terminar.",
+            )
+        resposta = QMessageBox.question(
+            self, titulo, pergunta,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if resposta != QMessageBox.StandardButton.Yes:
+            return
+        self.toggle_pause_automation()
+
     def toggle_pause_automation(self):
         if not self.worker or not self.worker.isRunning():
             return
         if self.worker.pause_event.is_set():
             self.worker.retomar()
-            self.btn_pause.setText("\u23f8\ufe0f Pausar Extra\u00e7\u00e3o")
+            self.btn_pause.setText("\u23f8\ufe0f Pausar")
             self.txt_logs.append("\u25b6\ufe0f Retomada solicitada.")
         else:
             self.worker.pausar()
-            self.btn_pause.setText("\u25b6\ufe0f Retomar Extra\u00e7\u00e3o")
+            self.btn_pause.setText("\u25b6\ufe0f Retomar")
             self.txt_logs.append(
                 "\u23f8\ufe0f Pausa solicitada; a extra\u00e7\u00e3o ser\u00e1 pausada "
                 "ao concluir a requisi\u00e7\u00e3o atual."
             )
 
+    def confirm_cancel_automation(self):
+        if not self.worker or not self.worker.isRunning():
+            return
+        resposta = QMessageBox.question(
+            self, "Cancelar extra\u00e7\u00e3o",
+            "Tem certeza que deseja cancelar a extra\u00e7\u00e3o em andamento?\n\n"
+            "O que j\u00e1 foi extra\u00eddo at\u00e9 agora \u00e9 mantido, mas as requisi\u00e7\u00f5es "
+            "restantes n\u00e3o ser\u00e3o processadas.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if resposta != QMessageBox.StandardButton.Yes:
+            return
+        self.worker.cancelar()
+        self.btn_pause.setEnabled(False)
+        self.btn_cancel.setEnabled(False)
+        self.txt_logs.append("\u274c Cancelamento solicitado. Finalizando ap\u00f3s a etapa atual...")
+
     def automation_finished(self, results: list):
         self.btn_open_edge.setEnabled(True)
         self.btn_confirm_login.setEnabled(False)
         self.btn_pause.setEnabled(False)
-        self.btn_pause.setText("\u23f8\ufe0f Pausar Extra\u00e7\u00e3o")
+        self.btn_pause.setText("\u23f8\ufe0f Pausar")
+        self.btn_cancel.setEnabled(False)
         self.btn_manage_profiles.setEnabled(True)
         self.combo_profiles.setEnabled(True)
         self.chk_aba2.setEnabled(True)

@@ -102,6 +102,13 @@ QStatusBar {
     font-size: 12px;
 }
 
+QLabel#appStatusBarLabel {
+    color: #8b949e;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 16px;
+}
+
 /* --- Tab Widget (Navegação Principal) --- */
 QTabWidget::pane {
     border: none;

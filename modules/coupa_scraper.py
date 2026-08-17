@@ -57,31 +57,50 @@ class CoupaScraper:
         config_extrair: Dict[str, bool],
         pause_event=None,
         login_confirmation_event=None,
+        cancel_event=None,
     ):
         self.requisicoes = requisicoes
         self.config_extrair = config_extrair
         self.pause_event = pause_event
         self.login_confirmation_event = login_confirmation_event
+        self.cancel_event = cancel_event
 
-    async def aguardar_retomada(self, log_callback):
-        """Aguarda retomada. Sleep reduzido de 0.5s para 0.1s (5x mais responsivo)."""
+    async def aguardar_retomada(self, log_callback) -> bool:
+        """Aguarda retomada. Sleep reduzido de 0.5s para 0.1s (5x mais responsivo).
+
+        Retorna False se a extração foi cancelada enquanto pausada - antes
+        disso não havia como sair dessa espera a não ser fechando o app
+        inteiro, já que só o pause_event era checado no loop.
+        """
         if not self.pause_event or not self.pause_event.is_set():
             # amazonq-ignore-next-line
-            return
+            return True
 
         log_callback("⏸️ Extração pausada. Clique em 'Retomar Extração' para continuar.")
         while self.pause_event.is_set():
+            if self.cancel_event and self.cancel_event.is_set():
+                return False
             await asyncio.sleep(0.1)
         log_callback("▶️ Extração retomada.")
+        return True
 
-    async def aguardar_confirmacao_login(self, log_callback):
-        """Aguarda confirmação de login. Sleep reduzido de 0.5s para 0.1s (5x mais responsivo)."""
+    async def aguardar_confirmacao_login(self, log_callback) -> bool:
+        """Aguarda confirmação de login. Sleep reduzido de 0.5s para 0.1s (5x mais responsivo).
+
+        Retorna False se a extração foi cancelada nessa espera - sem isso,
+        um Edge que não abre corretamente ou uma pessoa que não consegue
+        concluir o login travava aqui indefinidamente, sem nenhuma saída
+        além de fechar o aplicativo inteiro.
+        """
         log_callback(
             "🔐 Faça o login no Coupa no Edge e clique em 'Confirmar Login e Iniciar Extração'."
         )
         while not self.login_confirmation_event.is_set():
+            if self.cancel_event and self.cancel_event.is_set():
+                return False
             await asyncio.sleep(0.1)
         log_callback("✅ Login confirmado. Iniciando extração...")
+        return True
 
     async def run(self, log_callback, edge_ready_callback=None) -> List[Dict[str, Any]]:
         extracted_data = []
@@ -154,10 +173,17 @@ class CoupaScraper:
 
         if edge_ready_callback:
             edge_ready_callback()
-        await self.aguardar_confirmacao_login(log_callback)
+        if not await self.aguardar_confirmacao_login(log_callback):
+            log_callback("❌ Extração cancelada pelo usuário.")
+            return extracted_data
 
         for idx, req in enumerate(self.requisicoes, 1):
-            await self.aguardar_retomada(log_callback)
+            if not await self.aguardar_retomada(log_callback):
+                log_callback("❌ Extração cancelada pelo usuário.")
+                break
+            if self.cancel_event and self.cancel_event.is_set():
+                log_callback("❌ Extração cancelada pelo usuário.")
+                break
             url_requisicao = f"{coupa_base_url.rstrip('/')}/requisition_headers/{req.strip()}"
             log_callback(f"[{idx}/{len(self.requisicoes)}] Acessando Requisição #{req}...")
 
@@ -382,6 +408,7 @@ class AutomationWorker(QThread):
         self.config_extrair = config_extrair
         self.pause_event = threading.Event()
         self.login_confirmation_event = threading.Event()
+        self.cancel_event = threading.Event()
 
     def pausar(self):
         self.pause_event.set()
@@ -391,6 +418,12 @@ class AutomationWorker(QThread):
 
     def confirmar_login(self):
         self.login_confirmation_event.set()
+
+    def cancelar(self):
+        """Sinaliza cancelamento - checado a cada 0.1s tanto na espera de
+        pausa quanto na de confirmação de login (ver CoupaScraper), então a
+        thread encerra rapidamente sem precisar fechar o app inteiro."""
+        self.cancel_event.set()
 
     def run(self):
         """Melhoria 6: try/except garante que finished_signal SEMPRE seja emitido."""
@@ -403,6 +436,7 @@ class AutomationWorker(QThread):
                 self.config_extrair,
                 self.pause_event,
                 self.login_confirmation_event,
+                self.cancel_event,
             )
 
             def log_with_progress(msg: str):

@@ -316,19 +316,19 @@ class FrameworkApp(QMainWindow):
         self.setCentralWidget(central)
 
         # --- Status Bar ---
+        # Sem stylesheet inline aqui - o QStatusBar já é estilizado pela folha
+        # global (APP_STYLESHEET, aplicada em app.setStyleSheet mais abaixo).
+        # Uma sobrescrita local duplicava quase a mesma regra com valores
+        # levemente diferentes (font-size, padding) e ainda não resolvia a cor
+        # do texto, porque QLabel não herda "color" do QStatusBar pai - por
+        # isso o rótulo usava a cor genérica de QLabel em vez da paleta.
         self.status_bar = QStatusBar()
-        self.status_bar.setStyleSheet("""
-            QStatusBar {
-                background: #161b22;
-                color: #8b949e;
-                font-size: 13px;
-                padding: 4px 16px;
-                border-top: 1px solid #30363d;
-            }
-            QStatusBar::item { border: none; }
-        """)
         self.lbl_status = QLabel("Pronto")
-        self.status_bar.addWidget(self.lbl_status)
+        self.lbl_status.setObjectName("appStatusBarLabel")
+        # Stretch=1 para o rótulo ocupar o espaço disponível e não ficar preso
+        # ao tamanho calculado para o texto inicial "Pronto", cortando
+        # mensagens de status mais longas.
+        self.status_bar.addWidget(self.lbl_status, 1)
         self.setStatusBar(self.status_bar)
 
         # Instanciação das abas + painel de status (botão "🧩 Painel" no header).
