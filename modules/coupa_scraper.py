@@ -171,18 +171,32 @@ class CoupaScraper:
 
                 await page.wait_for_selector("body", state="attached", timeout=5000)
 
-                seletor_pedido = "a[href*='purchase_order'], .po-number, :has-text('PO nº')"
-                try:
-                    await page.wait_for_selector(seletor_pedido, state="attached", timeout=2500)
-                except Exception:
-                    pass
-                pedido_elemento = await page.query_selector(seletor_pedido)
+                # A confirmação de pedido emitido aparece na barra de status
+                # (#msgbar) do Coupa. Esse elemento não é recriado a cada
+                # navegação: se não for limpo antes de checar cada requisição,
+                # o texto de uma requisição anterior ("PO nº X Emitido")
+                # permanece visível e é erroneamente atribuído à requisição
+                # atual, mesmo quando ela não tem pedido próprio.
+                await page.evaluate(
+                    "() => { const el = document.getElementById('msgbar'); "
+                    "if (el) el.textContent = ''; }"
+                )
+
                 pedido_texto = ""
-                if pedido_elemento:
-                    raw_text = await pedido_elemento.inner_text()
-                    match_po = re.search(r'PO\s*nº\s*\d+', raw_text, re.IGNORECASE)
+                try:
+                    await page.wait_for_function(
+                        "() => { const el = document.getElementById('msgbar'); "
+                        "return !!(el && /PO\\s*n[ºo]\\s*\\d+/i.test(el.textContent)); }",
+                        timeout=2500,
+                    )
+                    msgbar_texto = await page.eval_on_selector(
+                        "#msgbar", "(el) => el.textContent"
+                    )
+                    match_po = re.search(r'PO\s*nº\s*\d+', msgbar_texto, re.IGNORECASE)
                     if match_po:
                         pedido_texto = match_po.group(0)
+                except Exception:
+                    pass
 
                 if not pedido_texto:
                     log_callback(f"⚠️ Requisição #{req} ignorada: Nenhum pedido emitido.")
