@@ -14,6 +14,23 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from modules.config import MAP_FORNECEDORES, MAP_UNIDADES
 
+_CARACTERES_INVALIDOS_PASTA = re.compile(r'[\\/:*?"<>|\n\r\t]')
+
+
+def _nome_pasta_esperado(fornecedor_nome: str) -> str:
+    """Normaliza o nome do fornecedor do mesmo jeito que
+    Organizador.sanitizar_nome (modules/organizador.py) normaliza ao criar a
+    pasta de anexos, para comparar por igualdade exata em vez de substring.
+
+    Sem isso, `"ABC" in pasta.lower()` também casava com pastas de
+    fornecedores diferentes cujo nome só contém "ABC" como parte do nome
+    (ex: "ABC Distribuidora" e "ABC Ltda"), anexando arquivos da empresa
+    errada no e-mail.
+    """
+    nome_limpo = _CARACTERES_INVALIDOS_PASTA.sub(" ", fornecedor_nome).strip()
+    nome_limpo = re.sub(r"\s+", " ", nome_limpo).strip()
+    return (nome_limpo if nome_limpo else "SEM_NOME").lower()
+
 
 class SpreadsheetCache:
     """Item 14: Cache LRU para planilhas de mapeamento com verificação de timestamp.
@@ -200,6 +217,34 @@ class EmailWorker(QThread):
             self.finished_signal.emit(False, "Módulo pywin32 não encontrado. Instale com 'pip install pywin32'.")
             return
 
+        # Uma única conexão SMTP autenticada para o lote inteiro, em vez de
+        # reconectar e relogar a cada e-mail: além de mais rápido, evita
+        # esbarrar em limites de login por minuto que provedores como
+        # Office 365/Gmail costumam aplicar quando há muitos pedidos na
+        # mesma extração.
+        smtp_connection = None
+        if send_mode == "smtp":
+            try:
+                smtp_connection = smtplib.SMTP(smtp_server, port)
+                smtp_connection.starttls()
+                smtp_connection.login(sender, password)
+            except Exception as smtp_err:
+                self.finished_signal.emit(False, f"Falha ao conectar ao servidor SMTP: {smtp_err}")
+                return
+
+        try:
+            self._enviar_todos(send_mode, smtp_connection, sender, template, pasta_base_arquivos)
+        finally:
+            if smtp_connection is not None:
+                try:
+                    smtp_connection.quit()
+                except Exception:
+                    pass
+
+        password = None
+        self.finished_signal.emit(True, "Processo finalizado.")
+
+    def _enviar_todos(self, send_mode, smtp_connection, sender, template, pasta_base_arquivos):
         for item in self.results:
             # amazonq-ignore-next-line
             if "erro" in item or item.get("status") == "Sem pedido emitido":
@@ -259,8 +304,9 @@ class EmailWorker(QThread):
                 attachments.append(self.attachment_path)
 
             if pasta_base_arquivos and os.path.exists(pasta_base_arquivos):
+                nome_pasta_esperado = _nome_pasta_esperado(fornecedor_nome)
                 for pasta in os.listdir(pasta_base_arquivos):
-                    if fornecedor_nome.lower() in pasta.lower():
+                    if pasta.lower() == nome_pasta_esperado:
                         caminho_pasta = os.path.join(pasta_base_arquivos, pasta)
                         for arquivo in os.listdir(caminho_pasta):
                             caminho_arquivo = os.path.join(caminho_pasta, arquivo)
@@ -270,18 +316,15 @@ class EmailWorker(QThread):
 
             if send_mode == "smtp":
                 self._send_via_smtp(
-                    sender, password, smtp_server, port, destinatario_fornecedor,
-                    copias_cc, subject, html_body, attachments, item, req,
+                    smtp_connection, sender, destinatario_fornecedor,
+                    copias_cc, subject, html_body, attachments, req,
                 )
             else:
                 self._send_via_outlook(sender, destinatario_fornecedor, copias_cc, subject, html_body, attachments)
 
-        password = None
-        self.finished_signal.emit(True, "Processo finalizado.")
-
     def _send_via_smtp(
-        self, sender, password, smtp_server, port, destinatario_fornecedor,
-        copias_cc, subject, html_body, attachments, item, req,
+        self, smtp_connection, sender, destinatario_fornecedor,
+        copias_cc, subject, html_body, attachments, req,
     ):
         msg = MIMEMultipart()
         msg["From"] = sender
@@ -295,10 +338,7 @@ class EmailWorker(QThread):
             self._anexar_arquivo(msg, caminho)
 
         try:
-            with smtplib.SMTP(smtp_server, port) as server:
-                server.starttls()
-                server.login(sender, password)
-                server.sendmail(sender, [destinatario_fornecedor] + copias_cc, msg.as_string())
+            smtp_connection.sendmail(sender, [destinatario_fornecedor] + copias_cc, msg.as_string())
             self.log_signal.emit(f"✅ E-mail enviado: Req #{req} via SMTP!")
         except Exception as smtp_err:
             self.log_signal.emit(f"❌ Falha envio #{req} via SMTP: {str(smtp_err)}")
