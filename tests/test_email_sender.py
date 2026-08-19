@@ -319,3 +319,61 @@ def test_codificar_anexos_base64(qt_app, tmp_path):
     assert len(anexos) == 1
     assert anexos[0]["nome"] == "pedido.pdf"
     assert base64.b64decode(anexos[0]["conteudo_base64"]) == b"conteudo do pdf de teste"
+
+
+# ---- Busca de e-mail do fornecedor por nome + código ----
+
+def test_find_supplier_email_sem_coluna_codigo_bate_so_pelo_nome(qt_app, tmp_path):
+    import pandas as pd
+
+    worker = EmailWorker(_base_smtp_config(tmp_path), [])
+    worker.df_fornecedores = pd.DataFrame({
+        "fornecedor": ["ABC Ltda"],
+        "email": ["abc@empresa.com"],
+    })
+
+    # Planilha antiga, sem coluna de código - comportamento inalterado.
+    assert worker._find_supplier_email("ABC Ltda", "999") == "abc@empresa.com"
+
+
+def test_find_supplier_email_com_codigo_exige_nome_e_codigo_batendo(qt_app, tmp_path):
+    import pandas as pd
+
+    worker = EmailWorker(_base_smtp_config(tmp_path), [])
+    worker.df_fornecedores = pd.DataFrame({
+        "fornecedor": ["ABC Ltda", "ABC Ltda"],
+        "codigo": ["111", "222"],
+        "email": ["abc111@empresa.com", "abc222@empresa.com"],
+    })
+
+    assert worker._find_supplier_email("ABC Ltda", "111") == "abc111@empresa.com"
+    assert worker._find_supplier_email("ABC Ltda", "222") == "abc222@empresa.com"
+
+
+def test_find_supplier_email_com_codigo_errado_nao_bate(qt_app, tmp_path):
+    import pandas as pd
+
+    worker = EmailWorker(_base_smtp_config(tmp_path), [])
+    worker.df_fornecedores = pd.DataFrame({
+        "fornecedor": ["ABC Ltda"],
+        "codigo": ["111"],
+        "email": ["abc@empresa.com"],
+    })
+
+    # Nome bate, mas código informado (extração) diverge do cadastrado -
+    # nao deve retornar o e-mail (evita entregar pro fornecedor errado).
+    assert worker._find_supplier_email("ABC Ltda", "999") == ""
+
+
+def test_find_supplier_email_linha_sem_codigo_cai_no_nome(qt_app, tmp_path):
+    import pandas as pd
+
+    worker = EmailWorker(_base_smtp_config(tmp_path), [])
+    # Mistura: uma linha com código, outra sem (planilha em transição).
+    worker.df_fornecedores = pd.DataFrame({
+        "fornecedor": ["ABC Ltda", "XYZ Distribuidora"],
+        "codigo": ["111", ""],
+        "email": ["abc@empresa.com", "xyz@empresa.com"],
+    })
+
+    assert worker._find_supplier_email("XYZ Distribuidora", "999") == "xyz@empresa.com"

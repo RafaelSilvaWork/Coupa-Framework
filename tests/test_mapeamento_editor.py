@@ -49,7 +49,7 @@ def test_validar_rejeita_nome_duplicado(qt_app, tmp_path):
     erro = dialog._validar([("ABC Ltda", "abc@empresa.com"), ("abc ltda", "outro@empresa.com")])
 
     assert erro is not None
-    assert "duplicado" in erro.lower()
+    assert "duplicad" in erro.lower()
 
 
 def test_validar_aceita_linhas_validas(qt_app, tmp_path):
@@ -81,3 +81,51 @@ def test_salvar_nao_fecha_dialogo_quando_invalido(qt_app, tmp_path, monkeypatch)
     dialog._salvar()
 
     assert not caminho.exists()
+
+
+# ---- Modo com_codigo (editor de Fornecedores) ----
+
+def test_com_codigo_mostra_terceira_coluna(qt_app, tmp_path):
+    dialog = MapeamentoEditorDialog(
+        None, "Mapa de Fornecedores", tmp_path / "novo.xlsx", "Fornecedor", com_codigo=True,
+    )
+
+    assert dialog.tabela.columnCount() == 3
+    assert dialog.tabela.horizontalHeaderItem(1).text() == "Código"
+
+
+def test_com_codigo_permite_nomes_iguais_com_codigos_diferentes(qt_app, tmp_path):
+    dialog = MapeamentoEditorDialog(
+        None, "Mapa de Fornecedores", tmp_path / "novo.xlsx", "Fornecedor", com_codigo=True,
+    )
+
+    erro = dialog._validar([
+        ("ABC Ltda", "111", "abc111@empresa.com"),
+        ("ABC Ltda", "222", "abc222@empresa.com"),
+    ])
+
+    assert erro is None
+
+
+def test_com_codigo_rejeita_mesmo_nome_e_codigo_repetidos(qt_app, tmp_path):
+    dialog = MapeamentoEditorDialog(
+        None, "Mapa de Fornecedores", tmp_path / "novo.xlsx", "Fornecedor", com_codigo=True,
+    )
+
+    erro = dialog._validar([
+        ("ABC Ltda", "111", "abc@empresa.com"),
+        ("ABC Ltda", "111", "outro@empresa.com"),
+    ])
+
+    assert erro is not None
+    assert "duplicad" in erro.lower()
+
+
+def test_com_codigo_salva_e_carrega_de_volta(qt_app, tmp_path):
+    caminho = tmp_path / "fornecedores.xlsx"
+    dialog = MapeamentoEditorDialog(None, "Mapa de Fornecedores", caminho, "Fornecedor", com_codigo=True)
+
+    dialog._adicionar_linha("ABC Ltda", "111", "abc@empresa.com")
+    dialog._salvar()
+
+    assert load_mapping(caminho, com_codigo=True) == [("ABC Ltda", "111", "abc@empresa.com")]

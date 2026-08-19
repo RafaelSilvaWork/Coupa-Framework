@@ -2,7 +2,10 @@
 usadas no envio de e-mail: fornecedores, unidades/regionais e solicitantes.
 
 Um único diálogo serve os três casos - só muda o título, o caminho do
-arquivo e o rótulo da coluna de nome.
+arquivo e o rótulo da coluna de nome. Fornecedores usa com_codigo=True pra
+ganhar uma coluna extra de Código, que modules/email_sender.py passa a
+exigir junto do nome quando preenchida (evita casar fornecedores com nome
+parecido).
 """
 from pathlib import Path
 
@@ -15,12 +18,14 @@ from modules.services.mapeamento_service import is_valid_email, load_mapping, sa
 
 
 class MapeamentoEditorDialog(QDialog):
-    def __init__(self, parent, titulo: str, caminho, nome_label: str):
+    def __init__(self, parent, titulo: str, caminho, nome_label: str, com_codigo: bool = False):
         super().__init__(parent)
         self.setWindowTitle(titulo)
         self.resize(560, 480)
         self._caminho = Path(caminho)
         self._nome_label = nome_label
+        self._com_codigo = com_codigo
+        self._num_colunas = 3 if com_codigo else 2
 
         layout = QVBoxLayout(self)
 
@@ -28,11 +33,20 @@ class MapeamentoEditorDialog(QDialog):
         info.setWordWrap(True)
         layout.addWidget(info)
 
-        self.tabela = QTableWidget(0, 2)
-        self.tabela.setHorizontalHeaderLabels([nome_label, "Email"])
-        self.tabela.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.tabela.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        cabecalhos = [nome_label, "Código", "Email"] if com_codigo else [nome_label, "Email"]
+        self.tabela = QTableWidget(0, self._num_colunas)
+        self.tabela.setHorizontalHeaderLabels(cabecalhos)
+        for coluna in range(self._num_colunas):
+            self.tabela.horizontalHeader().setSectionResizeMode(coluna, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.tabela, 1)
+
+        if com_codigo:
+            dica = QLabel(
+                "Código opcional: quando preenchido, o e-mail só é usado se o nome E o código "
+                "baterem com o fornecedor da extração. Linhas sem código continuam batendo só pelo nome."
+            )
+            dica.setWordWrap(True)
+            layout.addWidget(dica)
 
         botoes_linha = QHBoxLayout()
         btn_adicionar = QPushButton("+ Adicionar linha")
@@ -73,7 +87,7 @@ class MapeamentoEditorDialog(QDialog):
 
     def _carregar_arquivo(self, caminho: Path):
         try:
-            linhas = load_mapping(caminho)
+            linhas = load_mapping(caminho, com_codigo=self._com_codigo)
         except Exception as exc:
             QMessageBox.critical(self, "Erro ao carregar", f"Não foi possível ler a planilha:\n{exc}")
             linhas = []
@@ -81,14 +95,19 @@ class MapeamentoEditorDialog(QDialog):
 
     def _preencher_tabela(self, linhas):
         self.tabela.setRowCount(0)
-        for nome, email in linhas:
-            self._adicionar_linha(nome, email)
+        for linha in linhas:
+            self._adicionar_linha(*linha)
 
-    def _adicionar_linha(self, nome: str = "", email: str = ""):
+    def _adicionar_linha(self, nome: str = "", *resto: str):
+        # resto = (email,) sem código, ou (codigo, email) com código -
+        # aceita ambos os formatos pra _preencher_tabela funcionar com o
+        # retorno de load_mapping tanto com quanto sem com_codigo.
+        valores = (nome,) + resto
+        valores = valores + ("",) * (self._num_colunas - len(valores))
         row = self.tabela.rowCount()
         self.tabela.insertRow(row)
-        self.tabela.setItem(row, 0, QTableWidgetItem(nome))
-        self.tabela.setItem(row, 1, QTableWidgetItem(email))
+        for coluna in range(self._num_colunas):
+            self.tabela.setItem(row, coluna, QTableWidgetItem(valores[coluna]))
 
     def _remover_selecionadas(self):
         linhas = sorted({indice.row() for indice in self.tabela.selectedIndexes()}, reverse=True)
@@ -98,27 +117,32 @@ class MapeamentoEditorDialog(QDialog):
     def _linhas_atuais(self):
         linhas = []
         for row in range(self.tabela.rowCount()):
-            nome_item = self.tabela.item(row, 0)
-            email_item = self.tabela.item(row, 1)
-            nome = nome_item.text().strip() if nome_item else ""
-            email = email_item.text().strip() if email_item else ""
-            if nome or email:
-                linhas.append((nome, email))
+            valores = []
+            for coluna in range(self._num_colunas):
+                item = self.tabela.item(row, coluna)
+                valores.append(item.text().strip() if item else "")
+            if any(valores):
+                linhas.append(tuple(valores))
         return linhas
 
     def _validar(self, linhas):
         """Retorna a mensagem de erro da primeira linha inválida, ou None se tudo ok."""
         vistos = set()
-        for nome, email in linhas:
+        for linha in linhas:
+            nome, codigo, email = (linha[0], linha[1], linha[2]) if self._com_codigo else (linha[0], "", linha[1])
             if not nome:
                 return "Existe uma linha sem nome preenchido."
             if not email:
                 return f'"{nome}" está sem e-mail preenchido.'
             if not is_valid_email(email):
                 return f'E-mail inválido para "{nome}": {email}'
-            chave = nome.strip().lower()
+            # Chave de duplicidade inclui o código: com com_codigo=True, o
+            # mesmo nome pode aparecer mais de uma vez desde que o código
+            # seja diferente (fornecedores homônimos com códigos distintos).
+            chave = (nome.strip().lower(), codigo.strip().lower())
             if chave in vistos:
-                return f'Nome duplicado: "{nome}".'
+                descricao = f'"{nome}" (código "{codigo}")' if codigo else f'"{nome}"'
+                return f"Linha duplicada: {descricao}."
             vistos.add(chave)
         return None
 
@@ -129,7 +153,7 @@ class MapeamentoEditorDialog(QDialog):
             QMessageBox.warning(self, "Não foi possível salvar", erro)
             return
         try:
-            save_mapping(self._caminho, linhas, nome_label=self._nome_label)
+            save_mapping(self._caminho, linhas, nome_label=self._nome_label, com_codigo=self._com_codigo)
         except Exception as exc:
             QMessageBox.critical(self, "Erro ao salvar", f"Não foi possível salvar a planilha:\n{exc}")
             return
@@ -140,7 +164,7 @@ class MapeamentoEditorDialog(QDialog):
         if not caminho:
             return
         try:
-            linhas = load_mapping(caminho)
+            linhas = load_mapping(caminho, com_codigo=self._com_codigo)
         except Exception as exc:
             QMessageBox.critical(self, "Erro ao importar", f"Não foi possível ler a planilha:\n{exc}")
             return
@@ -152,7 +176,7 @@ class MapeamentoEditorDialog(QDialog):
         if not caminho:
             return
         try:
-            save_mapping(caminho, self._linhas_atuais(), nome_label=self._nome_label)
+            save_mapping(caminho, self._linhas_atuais(), nome_label=self._nome_label, com_codigo=self._com_codigo)
         except Exception as exc:
             QMessageBox.critical(self, "Erro ao exportar", f"Não foi possível exportar a planilha:\n{exc}")
             return

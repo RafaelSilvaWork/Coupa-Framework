@@ -143,7 +143,10 @@ class EmailWorker(QThread):
                 self.log_signal.emit(f"📦 Cache: {caminho_fornecedores} carregado do cache")
             else:
                 try:
-                    self.df_fornecedores = pd.read_excel(caminho_fornecedores)
+                    # dtype=str evita que o pandas infira colunas como número
+                    # (ex: código de fornecedor só com dígitos vira 123.0 em
+                    # vez de "123", quebrando a comparação exata de código).
+                    self.df_fornecedores = pd.read_excel(caminho_fornecedores, dtype=str)
                     self.df_fornecedores.columns = [c.lower().strip() for c in self.df_fornecedores.columns]
                     cache.set(str(caminho_fornecedores), self.df_fornecedores)
                 except Exception as e:
@@ -159,7 +162,7 @@ class EmailWorker(QThread):
                 self.log_signal.emit(f"📦 Cache: {caminho_solicitantes} carregado do cache")
             else:
                 try:
-                    self.df_solicitantes = pd.read_excel(caminho_solicitantes)
+                    self.df_solicitantes = pd.read_excel(caminho_solicitantes, dtype=str)
                     self.df_solicitantes.columns = [c.lower().strip() for c in self.df_solicitantes.columns]
                     cache.set(str(caminho_solicitantes), self.df_solicitantes)
                 except Exception as e:
@@ -176,7 +179,7 @@ class EmailWorker(QThread):
                 self.log_signal.emit(f"📦 Cache: {caminho_unidades} carregado do cache")
             else:
                 try:
-                    self.df_unidades = pd.read_excel(caminho_unidades)
+                    self.df_unidades = pd.read_excel(caminho_unidades, dtype=str)
                     self.df_unidades.columns = [c.lower().strip() for c in self.df_unidades.columns]
                     cache.set(str(caminho_unidades), self.df_unidades)
                 except Exception as e:
@@ -204,8 +207,44 @@ class EmailWorker(QThread):
                 return str(matches.iloc[0]).strip()
         return ""
 
-    def _find_supplier_email(self, fornecedor: str) -> str:
-        return self._find_email_in_df(self.df_fornecedores, fornecedor)
+    def _find_supplier_email(self, fornecedor: str, fornecedor_num: str = "") -> str:
+        """Busca o e-mail do fornecedor por nome, exigindo também o código
+        quando a planilha de mapeamento tem uma coluna de código E a linha
+        correspondente tem esse código preenchido - evita que fornecedores
+        homônimos (nome igual/parecido, empresas diferentes) peguem o
+        e-mail um do outro. Linhas sem código na planilha continuam batendo
+        só pelo nome (compatível com planilhas antigas, sem essa coluna).
+        """
+        df = self.df_fornecedores
+        if not fornecedor.strip() or df is None:
+            return ""
+        nome_norm = fornecedor.strip().lower()
+        num_norm = (fornecedor_num or "").strip().lower()
+
+        email_columns = [c for c in df.columns if "email" in c]
+        if not email_columns:
+            return ""
+        codigo_columns = [c for c in df.columns if "codigo" in c or "código" in c]
+        nome_columns = [c for c in df.columns if c not in email_columns and c not in codigo_columns]
+        if not nome_columns:
+            return ""
+        nome_col = nome_columns[0]
+        nome_lower = df[nome_col].astype(str).str.strip().str.lower()
+
+        if codigo_columns and num_norm:
+            codigo_lower = df[codigo_columns[0]].astype(str).str.strip().str.lower()
+            tem_codigo_na_linha = codigo_lower.str.len() > 0
+            mask = (tem_codigo_na_linha & (nome_lower == nome_norm) & (codigo_lower == num_norm)) | (
+                ~tem_codigo_na_linha & (nome_lower == nome_norm)
+            )
+        else:
+            mask = nome_lower == nome_norm
+
+        matches = df.loc[mask, email_columns[0]].dropna()
+        matches = matches[matches.astype(str).str.strip() != ""]
+        if not matches.empty:
+            return str(matches.iloc[0]).strip()
+        return ""
 
     def _find_person_email(self, nome: str) -> str:
         return self._find_email_in_df(self.df_solicitantes, nome)
@@ -280,9 +319,10 @@ class EmailWorker(QThread):
 
             req = item.get("requisicao")
             fornecedor_nome = item.get("fornecedor", "").strip()
+            fornecedor_num = item.get("fornecedor_num", "").strip()
             localidade = item.get("localidade", "").strip()
 
-            destinatario_fornecedor = self._find_supplier_email(fornecedor_nome)
+            destinatario_fornecedor = self._find_supplier_email(fornecedor_nome, fornecedor_num)
             if not destinatario_fornecedor:
                 destinatario_fornecedor = sender
 

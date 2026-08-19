@@ -53,3 +53,20 @@ def test_load_mapping_skips_blank_rows(tmp_path):
     df.to_excel(caminho, index=False, engine="openpyxl")
 
     assert load_mapping(caminho) == [("ABC Ltda", "abc@empresa.com")]
+
+
+def test_save_and_load_mapping_com_codigo_roundtrip(tmp_path):
+    caminho = tmp_path / "fornecedores.xlsx"
+    linhas = [("ABC Ltda", "123", "abc@empresa.com"), ("XYZ Distribuidora", "", "xyz@empresa.com")]
+
+    save_mapping(caminho, linhas, nome_label="Fornecedor", com_codigo=True)
+    lidas = load_mapping(caminho, com_codigo=True)
+
+    assert lidas == linhas
+
+
+def test_load_mapping_ignores_codigo_column_when_com_codigo_false(tmp_path):
+    caminho = tmp_path / "fornecedores.xlsx"
+    save_mapping(caminho, [("ABC Ltda", "123", "abc@empresa.com")], nome_label="Fornecedor", com_codigo=True)
+
+    assert load_mapping(caminho, com_codigo=False) == [("ABC Ltda", "abc@empresa.com")]

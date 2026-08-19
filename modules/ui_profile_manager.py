@@ -298,7 +298,7 @@ class ProfileManagerWidget(QWidget):
         self.profiles_changed.emit()
 
     def _editar_mapa_fornecedores(self):
-        self._abrir_editor_mapa("Mapa de Fornecedores", MAP_FORNECEDORES, "Fornecedor")
+        self._abrir_editor_mapa("Mapa de Fornecedores", MAP_FORNECEDORES, "Fornecedor", com_codigo=True)
 
     def _editar_mapa_unidades(self):
         self._abrir_editor_mapa("Mapa de Unidades/Regionais", MAP_UNIDADES, "Unidade")
@@ -306,8 +306,8 @@ class ProfileManagerWidget(QWidget):
     def _editar_mapa_solicitantes(self):
         self._abrir_editor_mapa("Mapa de Solicitantes", MAP_SOLICITANTES, "Solicitante")
 
-    def _abrir_editor_mapa(self, titulo: str, caminho, nome_label: str):
-        dialog = MapeamentoEditorDialog(self, titulo, caminho, nome_label)
+    def _abrir_editor_mapa(self, titulo: str, caminho, nome_label: str, com_codigo: bool = False):
+        dialog = MapeamentoEditorDialog(self, titulo, caminho, nome_label, com_codigo=com_codigo)
         if dialog.exec():
             self.update_status(f"{titulo} atualizado com sucesso.")
 
