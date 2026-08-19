@@ -65,6 +65,7 @@ O projeto lê configurações via variáveis de ambiente ou arquivo .env. As pri
 - COUPA_FW_SECRET
 - MAP_FORNECEDORES
 - MAP_UNIDADES
+- MAP_SOLICITANTES
 - EDGE_EXECUTABLE_PATH
 
 ## Estrutura do projeto

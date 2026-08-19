@@ -42,6 +42,11 @@ class FrameworkSettings:
             os.environ.get("MAP_UNIDADES", str(PROJECT_ROOT / "mapeamento_unidades.xlsx"))
         )
     )
+    map_solicitantes: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get("MAP_SOLICITANTES", str(PROJECT_ROOT / "mapeamento_solicitantes.xlsx"))
+        )
+    )
     pasta_saida_padrao_pdf: Path = field(default_factory=lambda: PROJECT_ROOT / "saida_pedidos_pdf")
     perfil_edge_download: Path = field(
         default_factory=lambda: Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
@@ -69,6 +74,7 @@ SETTINGS = FrameworkSettings()
 COUPA_BASE_URL = SETTINGS.coupa_base_url
 MAP_FORNECEDORES = SETTINGS.map_fornecedores
 MAP_UNIDADES = SETTINGS.map_unidades
+MAP_SOLICITANTES = SETTINGS.map_solicitantes
 PASTA_SAIDA_PADRAO_PDF = SETTINGS.pasta_saida_padrao_pdf
 PERFIL_EDGE_DOWNLOAD = SETTINGS.perfil_edge_download
 HISTORICO_RENOMEADOR = SETTINGS.historico_renomeador

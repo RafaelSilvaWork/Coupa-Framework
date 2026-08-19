@@ -191,12 +191,12 @@ class EmailWorker(QThread):
             return ""
         candidate_columns = [c for c in df.columns if c not in email_columns]
         # Item 12: vetorizado com pandas em vez de iterrows()
+        # Comparação exata (não mais substring nos dois sentidos) - evita
+        # que um nome curto (ex: "ABC") case com outro que só o contém como
+        # parte do nome (ex: "ABC Distribuidora"), pegando o e-mail errado.
         for col in candidate_columns:
             col_lower = df[col].astype(str).str.strip().str.lower()
-            mask = col_lower.str.contains(term_norm, regex=False, na=False) | col_lower.apply(
-                lambda v: bool(v) and v in term_norm
-            )
-            matches = df.loc[mask, email_columns[0]].dropna()
+            matches = df.loc[col_lower == term_norm, email_columns[0]].dropna()
             matches = matches[matches.astype(str).str.strip() != ""]
             if not matches.empty:
                 return str(matches.iloc[0]).strip()

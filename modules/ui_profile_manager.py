@@ -6,8 +6,12 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import pyqtSignal
 
-from modules.config import ProfileManager, get_saved_coupa_instance, set_coupa_base_url
+from modules.config import (
+    MAP_FORNECEDORES, MAP_SOLICITANTES, MAP_UNIDADES,
+    ProfileManager, get_saved_coupa_instance, set_coupa_base_url,
+)
 from modules.styles import set_status, scrollable
+from modules.ui_mapeamento_editor import MapeamentoEditorDialog
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +105,24 @@ class ProfileManagerWidget(QWidget):
         config_layout.addRow(QLabel("E-mails do Comprador (separados por ; ou ,):"), self.txt_comprador_email)
         config_group.setLayout(config_layout)
         left_panel.addWidget(config_group)
+
+        mapeamentos_group = QGroupBox("Planilhas de Mapeamento (Nome → E-mail)")
+        mapeamentos_layout = QVBoxLayout()
+        mapeamentos_layout.addWidget(QLabel(
+            "Usadas no envio de e-mail para achar automaticamente o e-mail de "
+            "fornecedores, unidades e solicitantes a partir do nome."
+        ))
+        btn_map_fornecedores = QPushButton("Editar Fornecedores")
+        btn_map_fornecedores.clicked.connect(self._editar_mapa_fornecedores)
+        btn_map_unidades = QPushButton("Editar Unidades/Regionais")
+        btn_map_unidades.clicked.connect(self._editar_mapa_unidades)
+        btn_map_solicitantes = QPushButton("Editar Solicitantes")
+        btn_map_solicitantes.clicked.connect(self._editar_mapa_solicitantes)
+        mapeamentos_layout.addWidget(btn_map_fornecedores)
+        mapeamentos_layout.addWidget(btn_map_unidades)
+        mapeamentos_layout.addWidget(btn_map_solicitantes)
+        mapeamentos_group.setLayout(mapeamentos_layout)
+        left_panel.addWidget(mapeamentos_group)
 
         template_group = QGroupBox("Modelo de E-mail (HTML)")
         template_layout = QVBoxLayout()
@@ -227,6 +249,20 @@ class ProfileManagerWidget(QWidget):
         self.combo_profiles.setCurrentText(name)
         self.update_status(f"Perfil '{name}' salvo com sucesso.")
         self.profiles_changed.emit()
+
+    def _editar_mapa_fornecedores(self):
+        self._abrir_editor_mapa("Mapa de Fornecedores", MAP_FORNECEDORES, "Fornecedor")
+
+    def _editar_mapa_unidades(self):
+        self._abrir_editor_mapa("Mapa de Unidades/Regionais", MAP_UNIDADES, "Unidade")
+
+    def _editar_mapa_solicitantes(self):
+        self._abrir_editor_mapa("Mapa de Solicitantes", MAP_SOLICITANTES, "Solicitante")
+
+    def _abrir_editor_mapa(self, titulo: str, caminho, nome_label: str):
+        dialog = MapeamentoEditorDialog(self, titulo, caminho, nome_label)
+        if dialog.exec():
+            self.update_status(f"{titulo} atualizado com sucesso.")
 
     def delete_profile(self):
         name = self.combo_profiles.currentText()

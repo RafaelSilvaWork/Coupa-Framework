@@ -202,3 +202,32 @@ def test_run_nao_adiciona_cc_quando_extracao_de_emails_esta_desligada(qt_app, mo
     worker.run()
 
     assert captured["copias_cc"] == []
+
+
+# ---- Busca de e-mail por nome: comparação exata, não substring ----
+
+def test_find_email_in_df_usa_comparacao_exata(qt_app, tmp_path):
+    import pandas as pd
+
+    worker = EmailWorker(_base_smtp_config(tmp_path), [])
+    worker.df_fornecedores = pd.DataFrame({
+        "fornecedor": ["ABC", "ABC Distribuidora"],
+        "email": ["abc@empresa.com", "abc-distribuidora@empresa.com"],
+    })
+
+    assert worker._find_supplier_email("ABC") == "abc@empresa.com"
+    assert worker._find_supplier_email("ABC Distribuidora") == "abc-distribuidora@empresa.com"
+
+
+def test_find_email_in_df_nao_casa_nome_curto_com_substring(qt_app, tmp_path):
+    import pandas as pd
+
+    worker = EmailWorker(_base_smtp_config(tmp_path), [])
+    # Só existe "ABC Distribuidora" cadastrado - antes da correção, buscar
+    # por "ABC" batia por substring e retornava esse e-mail por engano.
+    worker.df_fornecedores = pd.DataFrame({
+        "fornecedor": ["ABC Distribuidora"],
+        "email": ["abc-distribuidora@empresa.com"],
+    })
+
+    assert worker._find_supplier_email("ABC") == ""

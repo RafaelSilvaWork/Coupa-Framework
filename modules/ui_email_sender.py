@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QRadioButton
 )
 from PyQt6.QtCore import pyqtSignal
-from modules.config import ProfileManager, MAP_FORNECEDORES, MAP_UNIDADES
+from modules.config import ProfileManager, MAP_FORNECEDORES, MAP_SOLICITANTES, MAP_UNIDADES
 from modules.email_sender import EmailWorker
 from modules.fluxo_orquestrador import get_modo_automatico
 from modules.logger import UILogger
@@ -484,7 +484,7 @@ class EmailSenderWidget(QWidget):
             "port": self.txt_smtp_port.text().strip(),
             "map_fornecedores": self.txt_map_fornecedores.text().strip() or str(MAP_FORNECEDORES),
             "map_unidades": self.txt_map_unidades.text().strip() or str(MAP_UNIDADES),
-            "map_solicitantes": self.txt_map_solicitantes.text().strip(),
+            "map_solicitantes": self.txt_map_solicitantes.text().strip() or str(MAP_SOLICITANTES),
             "template": template_html,
             "comprador_email": self.profiles.get(perfil_nome, {}).get("config", {}).get("comprador_email", ""),
             "pasta_arquivos": self.txt_pasta_arquivos.text().strip(),
