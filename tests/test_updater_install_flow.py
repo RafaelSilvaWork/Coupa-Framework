@@ -76,6 +76,7 @@ def test_download_progress_flow_starts_installer_and_quits_when_it_finishes(qt_a
     # isolado, sem precisar de um download de verdade em segundo plano.
     flow = _DownloadProgressFlow(None)
     flow._progress_dlg = QProgressDialog("Baixando...", None, 0, 100, None)
+    monkeypatch.setattr(updater, "_verify_installer_checksum", lambda path, checksum_url: None)
 
     started_with = {}
 
@@ -104,10 +105,38 @@ def test_download_progress_flow_starts_installer_and_quits_when_it_finishes(qt_a
 def test_download_progress_flow_closes_dialog_when_installer_fails_to_start(qt_app, monkeypatch):
     flow = _DownloadProgressFlow(None)
     flow._progress_dlg = QProgressDialog("Baixando...", None, 0, 100, None)
+    monkeypatch.setattr(updater, "_verify_installer_checksum", lambda path, checksum_url: None)
 
     monkeypatch.setattr(updater, "_start_installer", lambda path, parent_widget=None: None)
 
     flow._on_downloaded("C:/fake/setup.exe")
 
     assert flow._install_wait_thread is None
+    assert not flow._progress_dlg.isVisible()
+
+
+def test_download_progress_flow_never_installs_when_checksum_verification_fails(qt_app, monkeypatch, tmp_path):
+    flow = _DownloadProgressFlow(None)
+    flow._progress_dlg = QProgressDialog("Baixando...", None, 0, 100, None)
+
+    downloaded_file = tmp_path / "setup.exe"
+    downloaded_file.write_bytes(b"conteudo adulterado")
+
+    monkeypatch.setattr(
+        updater, "_verify_installer_checksum",
+        lambda path, checksum_url: "Verificação de integridade do instalador falhou (checksum não confere).",
+    )
+
+    install_calls = []
+    monkeypatch.setattr(updater, "_start_installer", lambda path, parent_widget=None: install_calls.append(path))
+
+    errors = []
+    flow.error.connect(errors.append)
+
+    flow._on_downloaded(str(downloaded_file))
+
+    assert install_calls == []  # instalador nunca deve rodar sem checksum válido
+    assert not downloaded_file.exists()  # arquivo suspeito é removido
+    assert len(errors) == 1
+    assert "checksum" in errors[0].lower()
     assert not flow._progress_dlg.isVisible()

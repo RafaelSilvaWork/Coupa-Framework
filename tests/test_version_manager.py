@@ -36,7 +36,11 @@ def test_list_releases_skips_drafts_and_releases_without_exe_asset(qt_app, monke
             "draft": False,
             "published_at": "2026-08-07T14:12:12Z",
             "assets": [
-                {"name": "CoupaFramework_Setup_v1.2.0.exe", "browser_download_url": "https://example/v1.2.0.exe"}
+                {"name": "CoupaFramework_Setup_v1.2.0.exe", "browser_download_url": "https://example/v1.2.0.exe"},
+                {
+                    "name": "CoupaFramework_Setup_v1.2.0.exe.sha256",
+                    "browser_download_url": "https://example/v1.2.0.exe.sha256",
+                },
             ],
         },
         {
@@ -64,6 +68,7 @@ def test_list_releases_skips_drafts_and_releases_without_exe_asset(qt_app, monke
     assert releases[0]["tag"] == "v1.2.0"
     assert releases[0]["label"] == "v1.2.0"
     assert releases[0]["asset_url"] == "https://example/v1.2.0.exe"
+    assert releases[0]["checksum_url"] == "https://example/v1.2.0.exe.sha256"
 
 
 def test_list_releases_emits_error_on_request_failure(qt_app, monkeypatch, tmp_path):

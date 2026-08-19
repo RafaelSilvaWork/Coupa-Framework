@@ -168,7 +168,18 @@ def _get_secret() -> bytes:
         return os.urandom(32)
 
 
-def _derive_key(salt: bytes) -> bytes:
+# PBKDF2_ITERATIONS segue a recomendação atual da OWASP para PBKDF2-HMAC-SHA256
+# (revisada para cima em relação às 100_000 usadas antes). Perfis já
+# criptografados com o valor antigo NÃO ficam ilegíveis: decrypt_value tenta
+# o valor atual e, se falhar, cai para _LEGACY_PBKDF2_ITERATIONS antes de
+# desistir - e o valor é regravado com o número de iterações atual na
+# próxima vez que o perfil for salvo (ProfileManager.save_profiles sempre
+# chama encrypt_value, que já usa PBKDF2_ITERATIONS).
+PBKDF2_ITERATIONS = 600_000
+_LEGACY_PBKDF2_ITERATIONS = 100_000
+
+
+def _derive_key(salt: bytes, iterations: int = PBKDF2_ITERATIONS) -> bytes:
     """Deriva uma chave AES a partir de um salt fixo + identificador da máquina."""
     machine_id = os.environ.get("COMPUTERNAME", "DEFAULT-MACHINE").encode("utf-8")
     # Melhoria 7: usa COUPA_FW_SECRET ou chave aleatória persistente por máquina.
@@ -178,19 +189,19 @@ def _derive_key(salt: bytes) -> bytes:
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt + machine_id,
-        iterations=100000,
+        iterations=iterations,
     )
     return base64.urlsafe_b64encode(kdf.derive(secret))
 
 
-def _get_fernet() -> 'Fernet':
+def _get_fernet(iterations: int = PBKDF2_ITERATIONS) -> 'Fernet':
     salt_file = CONFIG_FILE.with_suffix(".salt")
     if salt_file.exists():
         salt = salt_file.read_bytes()
     else:
         salt = os.urandom(16)
         salt_file.write_bytes(salt)
-    return Fernet(_derive_key(salt))
+    return Fernet(_derive_key(salt, iterations))
 
 
 SENSITIVE_FIELDS = ["comprador_email", "template", "sender", "password"]
@@ -212,8 +223,13 @@ def decrypt_value(ciphertext: str) -> str:
     if not ciphertext.startswith("gAAAA"):
         return ciphertext
     try:
-        f = _get_fernet()
-        return f.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+        return _get_fernet().decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+    except Exception:
+        pass
+    try:
+        # Compatibilidade com perfis gravados antes do aumento de
+        # PBKDF2_ITERATIONS (ver comentário acima da constante).
+        return _get_fernet(_LEGACY_PBKDF2_ITERATIONS).decrypt(ciphertext.encode("utf-8")).decode("utf-8")
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning("decrypt_value falhou: %s", e)

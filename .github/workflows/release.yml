@@ -63,6 +63,20 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Gerar checksum SHA-256 do instalador
+        run: |
+          # Publicado como asset separado (<instalador>.sha256) para o updater
+          # (modules/updater.py) e o module_installer conferirem a integridade
+          # do .exe antes de executa-lo - sem isso, um asset adulterado seria
+          # baixado e rodado silenciosamente sem nenhuma checagem.
+          $installer = Get-ChildItem "installer_output\CoupaFramework_Setup_*.exe" | Select-Object -First 1
+          if (-not $installer) {
+              Write-Error "Instalador nao encontrado em installer_output\"
+              exit 1
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLower()
+          Set-Content -Path "$($installer.FullName).sha256" -Value $hash -NoNewline -Encoding ascii
+
       - name: Publicar release no GitHub
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -73,6 +87,7 @@ jobs:
               Write-Error "Instalador nao encontrado em installer_output\"
               exit 1
           }
+          $checksum = "$($installer.FullName).sha256"
 
           # A API do GitHub as vezes responde com 503 "no server available"
           # de forma transitoria (visto duas vezes seguidas em releases
@@ -93,7 +108,7 @@ jobs:
                   Start-Sleep -Seconds $delaySeconds
               }
 
-              gh release create $tag $installer.FullName `
+              gh release create $tag $installer.FullName $checksum `
                 --title "Coupa Framework $tag" `
                 --notes "Versao $tag. Baixe o instalador e execute. Se ja tiver instalado, atualiza automaticamente." `
                 --latest

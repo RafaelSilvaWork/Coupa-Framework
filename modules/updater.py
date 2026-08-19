@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -122,6 +123,74 @@ def _is_newer_version(latest_tag: str, current_version: str) -> bool:
     return latest > current
 
 
+def _find_checksum_url(assets: list, installer_name: str) -> Optional[str]:
+    """Localiza o asset "<instalador>.sha256" publicado junto do instalador.
+
+    Ver "Gerar checksum SHA-256 do instalador" em .github/workflows/release.yml -
+    toda release a partir da introdução desta checagem publica esse asset ao
+    lado do .exe. Releases mais antigas não têm esse asset (retorna None).
+    """
+    if not installer_name:
+        return None
+    expected_name = f"{installer_name}.sha256"
+    return next(
+        (
+            asset.get("browser_download_url")
+            for asset in assets or []
+            if isinstance(asset, dict) and asset.get("name") == expected_name
+        ),
+        None,
+    )
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _fetch_expected_checksum(checksum_url: str) -> Optional[str]:
+    """Baixa o conteúdo do asset .sha256 e extrai o hash esperado.
+
+    Aceita tanto o formato "só o hash" (o que release.yml gera) quanto o
+    formato clássico de `sha256sum` ("<hash>  <nome-do-arquivo>"), caso o
+    asset tenha sido gerado manualmente de outra forma.
+    """
+    try:
+        response = requests.get(checksum_url, timeout=15)
+        response.raise_for_status()
+        text = response.text.strip()
+    except requests.RequestException as exc:
+        logger.warning("Falha ao baixar checksum do instalador: %s", exc)
+        return None
+    if not text:
+        return None
+    return text.split()[0].strip().lower()
+
+
+def _verify_installer_checksum(file_path: str, checksum_url: str) -> Optional[str]:
+    """Confere o SHA-256 do arquivo baixado contra o publicado na release.
+
+    Chamado sempre antes de executar um instalador baixado da rede - sem essa
+    checagem, um asset adulterado (release comprometida, download
+    interceptado) seria executado sem nenhuma validação. Falha fechado: sem
+    checksum publicado ou sem bater, retorna a mensagem de erro (string não
+    vazia); em caso de sucesso retorna None.
+    """
+    if not checksum_url:
+        return "Não foi possível verificar a integridade do instalador (checksum indisponível para esta versão)."
+    expected = _fetch_expected_checksum(checksum_url)
+    if not expected:
+        return "Não foi possível verificar a integridade do instalador (falha ao obter o checksum)."
+    actual = _sha256_file(file_path)
+    if actual.lower() != expected:
+        logger.error("Checksum do instalador não confere (esperado=%s, obtido=%s)", expected, actual)
+        return "Verificação de integridade do instalador falhou (checksum não confere)."
+    return None
+
+
 def _start_installer(installer_path: str, parent_widget=None) -> Optional[subprocess.Popen]:
     """Dispara o instalador silenciosamente, sem fechar o app atual.
 
@@ -144,7 +213,7 @@ def _start_installer(installer_path: str, parent_widget=None) -> Optional[subpro
 
 
 class _CheckThread(QThread):
-    update_found = pyqtSignal(str, str)  # (latest_tag, asset_url)
+    update_found = pyqtSignal(str, str, str)  # (latest_tag, asset_url, checksum_url)
 
     def run(self):
         try:
@@ -161,16 +230,18 @@ class _CheckThread(QThread):
             tag = data.get("tag_name", "")
             if not tag or not _is_newer_version(tag, CURRENT_VERSION):
                 return
-            asset_url = next(
+            assets = data.get("assets") or []
+            installer_asset = next(
                 (
-                    asset.get("browser_download_url")
-                    for asset in data.get("assets") or []
+                    asset for asset in assets
                     if isinstance(asset, dict) and asset.get("name", "").endswith(".exe")
                 ),
                 None,
             )
-            if asset_url:
-                self.update_found.emit(tag, asset_url)
+            if installer_asset:
+                asset_url = installer_asset.get("browser_download_url")
+                checksum_url = _find_checksum_url(assets, installer_asset.get("name", ""))
+                self.update_found.emit(tag, asset_url, checksum_url or "")
         except requests.RequestException as exc:
             logger.exception("Falha ao verificar atualização no GitHub: %s", _describe_github_api_error(exc))
         except ValueError as exc:
@@ -255,8 +326,10 @@ class _DownloadProgressFlow(QObject):
         self._progress_dlg = None
         self._download_thread = None
         self._install_wait_thread = None
+        self._checksum_url = ""
 
-    def start(self, asset_url: str, dialog_title: str, dialog_label: str):
+    def start(self, asset_url: str, checksum_url: str, dialog_title: str, dialog_label: str):
+        self._checksum_url = checksum_url
         self._progress_dlg = QProgressDialog(dialog_label, None, 0, 100, self._parent_widget)
         self._progress_dlg.setWindowTitle(dialog_title)
         self._progress_dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
@@ -270,6 +343,16 @@ class _DownloadProgressFlow(QObject):
         self._download_thread.start()
 
     def _on_downloaded(self, path: str):
+        self._progress_dlg.setLabelText("Verificando integridade do instalador...")
+        verification_error = _verify_installer_checksum(path, self._checksum_url)
+        if verification_error:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            self._on_error(verification_error)
+            return
+
         # O instalador silencioso não expõe percentual de progresso, então a
         # barra vira indeterminada (setRange(0, 0)) para a fase de instalação.
         self._progress_dlg.setLabelText("Instalando...")
@@ -308,13 +391,15 @@ class UpdateManager(QObject):
         self._flow = None
         self._latest_tag = ""
         self._asset_url = ""
+        self._checksum_url = ""
 
     def start(self):
         self._check_thread.start()
 
-    def _on_update_found(self, latest_tag: str, asset_url: str):
+    def _on_update_found(self, latest_tag: str, asset_url: str, checksum_url: str):
         self._latest_tag = latest_tag
         self._asset_url = asset_url
+        self._checksum_url = checksum_url
         self._prompt_update()
 
     def _prompt_update(self):
@@ -352,7 +437,7 @@ class UpdateManager(QObject):
     def _start_download(self):
         self._flow = _DownloadProgressFlow(self._parent_widget)
         self._flow.error.connect(self._on_error)
-        self._flow.start(self._asset_url, "Atualizando", "Baixando atualização...")
+        self._flow.start(self._asset_url, self._checksum_url, "Atualizando", "Baixando atualização...")
 
     def _on_error(self, err: str):
         QMessageBox.critical(self._parent_widget, "Erro na atualização", f"Falha ao baixar: {err}")
@@ -388,20 +473,21 @@ class _ListReleasesThread(QThread):
                 if not isinstance(item, dict) or item.get("draft"):
                     continue
                 tag = item.get("tag_name", "")
-                asset_url = next(
+                assets = item.get("assets") or []
+                installer_asset = next(
                     (
-                        asset.get("browser_download_url")
-                        for asset in item.get("assets") or []
+                        asset for asset in assets
                         if isinstance(asset, dict) and asset.get("name", "").endswith(".exe")
                     ),
                     None,
                 )
-                if not tag or not asset_url:
+                if not tag or not installer_asset:
                     continue
                 releases.append({
                     "tag": tag,
                     "label": _format_version_label(tag),
-                    "asset_url": asset_url,
+                    "asset_url": installer_asset.get("browser_download_url"),
+                    "checksum_url": _find_checksum_url(assets, installer_asset.get("name", "")) or "",
                     "published_at": item.get("published_at", ""),
                 })
             self.releases_loaded.emit(releases)
@@ -437,7 +523,7 @@ class VersionManager(QObject):
         self._list_thread.error.connect(self.list_error)
         self._list_thread.start()
 
-    def install_version(self, asset_url: str, label: str):
+    def install_version(self, asset_url: str, checksum_url: str, label: str):
         confirm = QMessageBox.question(
             self._parent_widget,
             "Confirmar instalação",
@@ -451,7 +537,7 @@ class VersionManager(QObject):
 
         self._flow = _DownloadProgressFlow(self._parent_widget)
         self._flow.error.connect(self._on_error)
-        self._flow.start(asset_url, "Instalando versão", f"Baixando {label}...")
+        self._flow.start(asset_url, checksum_url, "Instalando versão", f"Baixando {label}...")
 
     def _on_error(self, err: str):
         QMessageBox.critical(self._parent_widget, "Erro ao instalar versão", f"Falha ao baixar: {err}")

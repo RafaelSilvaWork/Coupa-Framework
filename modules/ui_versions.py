@@ -127,9 +127,10 @@ class VersionHistoryDialog(QDialog):
         btn.setEnabled(not is_current)
         btn.setObjectName("btnClear" if is_current else "btnPrimary")
         if not is_current:
+            checksum_url = release.get("checksum_url", "")
             btn.clicked.connect(
-                lambda _checked=False, url=release["asset_url"], label=release["label"]:
-                    self._version_manager.install_version(url, label)
+                lambda _checked=False, url=release["asset_url"], checksum_url=checksum_url, label=release["label"]:
+                    self._version_manager.install_version(url, checksum_url, label)
             )
         layout.addWidget(btn)
 

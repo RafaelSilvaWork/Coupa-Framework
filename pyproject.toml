@@ -4,7 +4,7 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B"]
-ignore = ["B904", "B006"]
+ignore = ["B904"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

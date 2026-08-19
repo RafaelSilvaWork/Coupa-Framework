@@ -9,7 +9,9 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from modules.updater import (
     GITHUB_REPO,
     _describe_github_api_error,
+    _find_checksum_url,
     _read_cache,
+    _verify_installer_checksum,
     _write_cache,
     build_installer_log_path,
 )
@@ -91,9 +93,10 @@ class ModuleInstallWorker(QThread):
             response.raise_for_status()
             data = response.json()
             _write_cache("latest_release", data)
+        assets = data.get("assets", [])
         asset = next(
             (
-                asset for asset in data.get("assets", [])
+                asset for asset in assets
                 if isinstance(asset, dict) and asset.get("name", "").endswith(".exe")
             ),
             None,
@@ -101,9 +104,9 @@ class ModuleInstallWorker(QThread):
         if not asset:
             return None
 
-        return self._download_asset(asset)
+        return self._download_asset(asset, assets)
 
-    def _download_asset(self, asset: dict) -> str:
+    def _download_asset(self, asset: dict, assets: list) -> str:
         temp_path = Path(tempfile.gettempdir()) / asset["name"]
         url = asset.get("browser_download_url")
         with requests.get(url, timeout=60, stream=True) as download_response:
@@ -121,4 +124,11 @@ class ModuleInstallWorker(QThread):
                         self.progress_signal.emit(percentual, f"Baixando instalador... {percentual}%")
                     else:
                         self.progress_signal.emit(-1, "Baixando instalador...")
+
+        self.progress_signal.emit(-1, "Verificando integridade do instalador...")
+        checksum_url = _find_checksum_url(assets, asset.get("name", ""))
+        verification_error = _verify_installer_checksum(str(temp_path), checksum_url or "")
+        if verification_error:
+            temp_path.unlink(missing_ok=True)
+            raise ValueError(verification_error)
         return str(temp_path)

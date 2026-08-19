@@ -22,6 +22,10 @@ __pycache__/
 .venv/
 venv/
 
+# Cobertura de testes (gerada pelo pytest-cov)
+.coverage
+coverage.xml
+
 # Saída de execução
 saida_pedidos_pdf/
 

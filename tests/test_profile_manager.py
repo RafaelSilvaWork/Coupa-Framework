@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from modules.config import ProfileManager, encrypt_value, decrypt_value
+from modules.config import ProfileManager, _LEGACY_PBKDF2_ITERATIONS, _get_fernet, encrypt_value, decrypt_value
 
 
 def test_encrypt_decrypt_roundtrip():
@@ -8,6 +8,18 @@ def test_encrypt_decrypt_roundtrip():
     encrypted = encrypt_value(original)
     assert encrypted != original
     assert decrypt_value(encrypted) == original
+
+
+def test_decrypt_falls_back_to_legacy_pbkdf2_iterations(tmp_path):
+    # Simula um valor criptografado antes do aumento de PBKDF2_ITERATIONS -
+    # decrypt_value precisa continuar lendo perfis salvos por versões
+    # anteriores do app em vez de perder o acesso a eles silenciosamente.
+    config_path = tmp_path / "profiles.json"
+    salt_path = config_path.with_suffix(".salt")
+    with patch("modules.config.CONFIG_FILE", config_path):
+        legacy_encrypted = _get_fernet(_LEGACY_PBKDF2_ITERATIONS).encrypt(b"senha_antiga").decode("utf-8")
+        assert decrypt_value(legacy_encrypted) == "senha_antiga"
+    salt_path.unlink(missing_ok=True)
 
 
 def test_decrypt_plaintext_passthrough():
