@@ -59,7 +59,7 @@ def load_mapping(path, com_codigo: bool = False) -> List[Union[Tuple[str, str], 
     if coluna_nome is None:
         return []
 
-    linhas = []
+    linhas: List[Union[Tuple[str, str], Tuple[str, str, str]]] = []
     for _, linha in df.iterrows():
         nome = _valor_texto(linha.get(coluna_nome, ""))
         email = _valor_texto(linha.get(coluna_email, ""))
