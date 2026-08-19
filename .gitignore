@@ -3,6 +3,7 @@ coupa_profiles.json
 coupa_profiles.salt
 coupa_fw.secret
 coupa_instance.json
+coupa_power_automate.json
 historico_renomeador.csv
 Relatorio_Geracao_PDF_*.xlsx
 mapeamento_fornecedores.xlsx

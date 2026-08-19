@@ -8,7 +8,8 @@ from PyQt6.QtCore import pyqtSignal
 
 from modules.config import (
     MAP_FORNECEDORES, MAP_SOLICITANTES, MAP_UNIDADES,
-    ProfileManager, get_saved_coupa_instance, set_coupa_base_url,
+    ProfileManager, get_power_automate_url, get_saved_coupa_instance,
+    set_coupa_base_url, set_power_automate_url,
 )
 from modules.styles import set_status, scrollable
 from modules.ui_mapeamento_editor import MapeamentoEditorDialog
@@ -53,6 +54,39 @@ class ProfileManagerWidget(QWidget):
         instance_layout.addWidget(self.lbl_instance_status)
         instance_group.setLayout(instance_layout)
         left_panel.addWidget(instance_group)
+
+        power_automate_group = QGroupBox("Power Automate (envio de e-mail)")
+        power_automate_layout = QVBoxLayout()
+        power_automate_layout.addWidget(QLabel(
+            "URL do flow do Power Automate usado para disparar e-mails de autorização. "
+            "Compartilhada por todos os perfis - configure uma vez só."
+        ))
+        power_automate_row = QHBoxLayout()
+        self.txt_power_automate_url = QLineEdit()
+        self.txt_power_automate_url.setEchoMode(QLineEdit.EchoMode.Password)
+        self.txt_power_automate_url.setPlaceholderText("https://.../triggers/manual/paths/invoke?...")
+        self.txt_power_automate_url.setText(get_power_automate_url())
+        self.btn_toggle_power_automate_url = QPushButton("\U0001f441")
+        self.btn_toggle_power_automate_url.setFixedWidth(32)
+        self.btn_toggle_power_automate_url.setCheckable(True)
+        self.btn_toggle_power_automate_url.setToolTip("Mostrar/Ocultar URL")
+        self.btn_toggle_power_automate_url.toggled.connect(
+            lambda checked: self.txt_power_automate_url.setEchoMode(
+                QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+            )
+        )
+        self.btn_save_power_automate_url = QPushButton("Salvar URL")
+        self.btn_save_power_automate_url.setObjectName("btnSuccess")
+        self.btn_save_power_automate_url.clicked.connect(self.save_power_automate_url)
+        power_automate_row.addWidget(self.txt_power_automate_url, 1)
+        power_automate_row.addWidget(self.btn_toggle_power_automate_url)
+        power_automate_row.addWidget(self.btn_save_power_automate_url)
+        power_automate_layout.addLayout(power_automate_row)
+        self.lbl_power_automate_status = QLabel("")
+        set_status(self.lbl_power_automate_status, "muted")
+        power_automate_layout.addWidget(self.lbl_power_automate_status)
+        power_automate_group.setLayout(power_automate_layout)
+        left_panel.addWidget(power_automate_group)
 
         profile_group = QGroupBox("Perfis de Automação")
         profile_layout = QVBoxLayout()
@@ -159,6 +193,19 @@ class ProfileManagerWidget(QWidget):
             return
         self.txt_coupa_instance.setText(normalizado)
         set_status(self.lbl_instance_status, "success", f"Instância salva: {normalizado}")
+
+    def save_power_automate_url(self):
+        valor = self.txt_power_automate_url.text().strip()
+        try:
+            set_power_automate_url(valor)
+        except Exception as exc:
+            logger.exception("Falha ao salvar URL do Power Automate")
+            QMessageBox.critical(self, "Erro", f"Não foi possível salvar a URL: {exc}")
+            return
+        if valor:
+            set_status(self.lbl_power_automate_status, "success", "URL do Power Automate salva.")
+        else:
+            set_status(self.lbl_power_automate_status, "muted", "URL do Power Automate removida.")
 
     def load_profiles(self):
         self.profiles = ProfileManager.load_profiles() or {}

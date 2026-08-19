@@ -7,7 +7,10 @@ from PyQt6.QtWidgets import (
     QRadioButton
 )
 from PyQt6.QtCore import pyqtSignal
-from modules.config import ProfileManager, MAP_FORNECEDORES, MAP_SOLICITANTES, MAP_UNIDADES
+from modules.config import (
+    MAP_FORNECEDORES, MAP_SOLICITANTES, MAP_UNIDADES,
+    ProfileManager, get_power_automate_url,
+)
 from modules.email_sender import EmailWorker
 from modules.fluxo_orquestrador import get_modo_automatico
 from modules.logger import UILogger
@@ -57,13 +60,20 @@ class EmailSenderWidget(QWidget):
 
         self.radio_smtp = QRadioButton("Enviar via SMTP")
         self.radio_outlook = QRadioButton("Enviar via Outlook Desktop")
+        self.radio_power_automate = QRadioButton("Enviar via Power Automate")
         self.radio_smtp.setChecked(True)
+        # Conectado nos três (não só no SMTP): numa troca direta entre Outlook
+        # e Power Automate, o radio_smtp nunca dispara "toggled", então
+        # update_send_mode() não seria chamado se só ele estivesse conectado.
         self.radio_smtp.toggled.connect(self.update_send_mode)
+        self.radio_outlook.toggled.connect(self.update_send_mode)
+        self.radio_power_automate.toggled.connect(self.update_send_mode)
 
         method_group = QGroupBox("Modo de Envio")
         method_layout = QVBoxLayout()
         method_layout.addWidget(self.radio_smtp)
         method_layout.addWidget(self.radio_outlook)
+        method_layout.addWidget(self.radio_power_automate)
         method_group.setLayout(method_layout)
         left_panel.addWidget(method_group)
 
@@ -415,16 +425,31 @@ class EmailSenderWidget(QWidget):
         self.smtp_group.setVisible(use_smtp)
         self.smtp_group.setEnabled(use_smtp)
 
+    def _modo_envio_atual(self) -> str:
+        if self.radio_smtp.isChecked():
+            return "smtp"
+        if self.radio_power_automate.isChecked():
+            return "power_automate"
+        return "outlook"
+
+    @staticmethod
+    def _modo_envio_label(send_mode: str) -> str:
+        return {"smtp": "SMTP", "outlook": "OUTLOOK", "power_automate": "POWER AUTOMATE"}.get(
+            send_mode, send_mode.upper()
+        )
+
     def check_prerequisites(self) -> tuple:
         """Verifica se a aba est\u00e1 pronta para execu\u00e7\u00e3o autom\u00e1tica."""
         if not self.results:
             return False, "Nenhum dado de origem carregado"
-        send_mode = "smtp" if self.radio_smtp.isChecked() else "outlook"
+        send_mode = self._modo_envio_atual()
         if send_mode == "smtp":
             if not self.txt_smtp_user.text().strip():
                 return False, "E-mail remetente SMTP n\u00e3o configurado"
             if not self.txt_smtp_pass.text().strip():
                 return False, "Senha SMTP n\u00e3o configurada"
+        if send_mode == "power_automate" and not get_power_automate_url():
+            return False, "URL do Power Automate n\u00e3o configurada (aba Gerenciar Perfis)"
         return True, "Pronto"
 
     def executar_automatico(self):
@@ -441,7 +466,7 @@ class EmailSenderWidget(QWidget):
                 QMessageBox.warning(self, "Aviso", "Nenhum dado de origem carregado.")
             return
 
-        send_mode = "smtp" if self.radio_smtp.isChecked() else "outlook"
+        send_mode = self._modo_envio_atual()
         sender = self.txt_smtp_user.text().strip()
         password = self.txt_smtp_pass.text().strip()
         smtp_server = self.txt_smtp_host.text().strip()
@@ -449,6 +474,15 @@ class EmailSenderWidget(QWidget):
         if send_mode == "smtp" and (not sender or not password or not smtp_server):
             if not modo_automatico:
                 QMessageBox.warning(self, "Aviso", "Preencha as configura\u00e7\u00f5es SMTP antes de enviar.")
+            return
+
+        power_automate_url = get_power_automate_url()
+        if send_mode == "power_automate" and not power_automate_url:
+            if not modo_automatico:
+                QMessageBox.warning(
+                    self, "Aviso",
+                    "Configure a URL do Power Automate na aba Gerenciar Perfis antes de enviar.",
+                )
             return
 
         perfil_nome = self.combo_perfis.currentText()
@@ -467,7 +501,7 @@ class EmailSenderWidget(QWidget):
                 preview = f"\n\nFornecedores:\n{lista}"
             mensagem_confirmacao = (
                 f"Isso vai disparar e-mails para até {len(validos)} destinatário(s) usando "
-                f"o perfil '{perfil_nome}' via {send_mode.upper()}.{preview}\n\nConfirma?"
+                f"o perfil '{perfil_nome}' via {self._modo_envio_label(send_mode)}.{preview}\n\nConfirma?"
             )
             confirmacao = QMessageBox.question(
                 self, "Confirmar Envio",
@@ -489,10 +523,14 @@ class EmailSenderWidget(QWidget):
             "comprador_email": self.profiles.get(perfil_nome, {}).get("config", {}).get("comprador_email", ""),
             "pasta_arquivos": self.txt_pasta_arquivos.text().strip(),
             "mode": send_mode,
+            "power_automate_url": power_automate_url,
         }
 
         self.btn_enviar.setEnabled(False)
-        self.log(f"\U0001f680 Iniciando disparo de e-mails com perfil: {perfil_nome} via {send_mode.upper()}...")
+        self.log(
+            f"\U0001f680 Iniciando disparo de e-mails com perfil: {perfil_nome} "
+            f"via {self._modo_envio_label(send_mode)}..."
+        )
 
         if modo_automatico:
             get_modo_automatico().ativar("Aba 6")

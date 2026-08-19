@@ -1,6 +1,8 @@
+import base64
 from pathlib import Path
 
 import pytest
+import requests
 from PyQt6.QtWidgets import QApplication
 
 from modules.email_sender import EmailWorker, _extrair_emails_validos, _nome_pasta_esperado
@@ -231,3 +233,89 @@ def test_find_email_in_df_nao_casa_nome_curto_com_substring(qt_app, tmp_path):
     })
 
     assert worker._find_supplier_email("ABC") == ""
+
+
+# ---- Modo de envio Power Automate ----
+
+class _FakeResponse:
+    def __init__(self, status_code=200):
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"status {self.status_code}")
+
+
+def test_run_envia_via_power_automate_com_payload_correto(qt_app, monkeypatch, tmp_path):
+    captured = {}
+
+    def _fake_post(url, json=None, timeout=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return _FakeResponse(200)
+
+    monkeypatch.setattr("modules.email_sender.requests.post", _fake_post)
+
+    results = [_resultado(requisicao="1", fornecedor="ABC", pedido="100")]
+    config = _base_smtp_config(
+        tmp_path, mode="power_automate", power_automate_url="https://exemplo.com/invoke?sig=abc",
+    )
+    worker = EmailWorker(config, results)
+
+    finished = []
+    worker.finished_signal.connect(lambda ok, msg: finished.append((ok, msg)))
+    worker.run()
+
+    assert captured["url"] == "https://exemplo.com/invoke?sig=abc"
+    assert captured["json"]["destinatario"] == "remetente@example.com"  # sem fornecedor cadastrado, cai no sender
+    assert captured["json"]["assunto"] == "AUTORIZAÇÃO PC 100"
+    assert isinstance(captured["json"]["cc"], list)
+    assert captured["json"]["anexos"] == []
+    assert finished == [(True, "Processo finalizado.")]
+
+
+def test_run_falha_quando_url_do_power_automate_nao_configurada(qt_app, monkeypatch, tmp_path):
+    monkeypatch.setattr("modules.email_sender.get_power_automate_url", lambda: "")
+
+    config = _base_smtp_config(tmp_path, mode="power_automate")
+    config.pop("power_automate_url", None)
+    worker = EmailWorker(config, [_resultado()])
+
+    finished = []
+    worker.finished_signal.connect(lambda ok, msg: finished.append((ok, msg)))
+    worker.run()
+
+    assert len(finished) == 1
+    ok, msg = finished[0]
+    assert ok is False
+    assert "power automate" in msg.lower() or "não configurada" in msg.lower()
+
+
+def test_run_registra_falha_quando_power_automate_retorna_erro(qt_app, monkeypatch, tmp_path):
+    def _fake_post(url, json=None, timeout=None):
+        return _FakeResponse(500)
+
+    monkeypatch.setattr("modules.email_sender.requests.post", _fake_post)
+
+    logs = []
+    config = _base_smtp_config(
+        tmp_path, mode="power_automate", power_automate_url="https://exemplo.com/invoke?sig=abc",
+    )
+    worker = EmailWorker(config, [_resultado()])
+    worker.log_signal.connect(logs.append)
+    worker.run()
+
+    assert any("falha" in log.lower() for log in logs)
+
+
+def test_codificar_anexos_base64(qt_app, tmp_path):
+    arquivo = tmp_path / "pedido.pdf"
+    arquivo.write_bytes(b"conteudo do pdf de teste")
+
+    worker = EmailWorker(_base_smtp_config(tmp_path), [])
+    anexos = worker._codificar_anexos_base64([str(arquivo)])
+
+    assert len(anexos) == 1
+    assert anexos[0]["nome"] == "pedido.pdf"
+    assert base64.b64decode(anexos[0]["conteudo_base64"]) == b"conteudo do pdf de teste"

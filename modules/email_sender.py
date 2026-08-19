@@ -1,8 +1,10 @@
+import base64
 import os
 import re
 import threading
 import time
 import pandas as pd
+import requests
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -12,7 +14,7 @@ from typing import Dict, Any, List, Optional, Tuple
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from modules.config import MAP_FORNECEDORES, MAP_UNIDADES
+from modules.config import MAP_FORNECEDORES, MAP_UNIDADES, get_power_automate_url
 
 _CARACTERES_INVALIDOS_PASTA = re.compile(r'[\\/:*?"<>|\n\r\t]')
 _EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
@@ -231,6 +233,14 @@ class EmailWorker(QThread):
             self.finished_signal.emit(False, "Módulo pywin32 não encontrado. Instale com 'pip install pywin32'.")
             return
 
+        power_automate_url = self.smtp_config.get("power_automate_url") or get_power_automate_url()
+        if send_mode == "power_automate" and not power_automate_url:
+            self.finished_signal.emit(
+                False,
+                "URL do flow do Power Automate não configurada. Configure em Gerenciar Perfis.",
+            )
+            return
+
         # Uma única conexão SMTP autenticada para o lote inteiro, em vez de
         # reconectar e relogar a cada e-mail: além de mais rápido, evita
         # esbarrar em limites de login por minuto que provedores como
@@ -247,7 +257,9 @@ class EmailWorker(QThread):
                 return
 
         try:
-            self._enviar_todos(send_mode, smtp_connection, sender, template, pasta_base_arquivos)
+            self._enviar_todos(
+                send_mode, smtp_connection, sender, template, pasta_base_arquivos, power_automate_url,
+            )
         finally:
             if smtp_connection is not None:
                 try:
@@ -258,7 +270,9 @@ class EmailWorker(QThread):
         password = None
         self.finished_signal.emit(True, "Processo finalizado.")
 
-    def _enviar_todos(self, send_mode, smtp_connection, sender, template, pasta_base_arquivos):
+    def _enviar_todos(
+        self, send_mode, smtp_connection, sender, template, pasta_base_arquivos, power_automate_url="",
+    ):
         for item in self.results:
             # amazonq-ignore-next-line
             if "erro" in item or item.get("status") == "Sem pedido emitido":
@@ -335,6 +349,11 @@ class EmailWorker(QThread):
                     smtp_connection, sender, destinatario_fornecedor,
                     copias_cc, subject, html_body, attachments, req,
                 )
+            elif send_mode == "power_automate":
+                self._send_via_power_automate(
+                    power_automate_url, destinatario_fornecedor,
+                    copias_cc, subject, html_body, attachments, req,
+                )
             else:
                 self._send_via_outlook(sender, destinatario_fornecedor, copias_cc, subject, html_body, attachments)
 
@@ -377,6 +396,34 @@ class EmailWorker(QThread):
             self.log_signal.emit(f"✅ E-mail enviado via Outlook: {subject}")
         except Exception as outlook_err:
             self.log_signal.emit(f"❌ Falha envio via Outlook: {str(outlook_err)}")
+
+    def _send_via_power_automate(
+        self, url, destinatario_fornecedor, copias_cc, subject, html_body, attachments, req,
+    ):
+        payload = {
+            "destinatario": destinatario_fornecedor,
+            "cc": copias_cc,
+            "assunto": subject,
+            "corpo_html": html_body,
+            "anexos": self._codificar_anexos_base64(attachments),
+        }
+        try:
+            response = requests.post(url, json=payload, timeout=60)
+            response.raise_for_status()
+            self.log_signal.emit(f"✅ E-mail enviado: Req #{req} via Power Automate!")
+        except requests.RequestException as power_automate_err:
+            self.log_signal.emit(f"❌ Falha envio #{req} via Power Automate: {str(power_automate_err)}")
+
+    def _codificar_anexos_base64(self, attachments):
+        anexos = []
+        for caminho in attachments:
+            try:
+                with open(caminho, "rb") as f:
+                    conteudo_base64 = base64.b64encode(f.read()).decode("ascii")
+                anexos.append({"nome": os.path.basename(caminho), "conteudo_base64": conteudo_base64})
+            except OSError as e:
+                self.log_signal.emit(f"Erro ao anexar {os.path.basename(caminho)}: {str(e)}")
+        return anexos
 
     def _anexar_arquivo(self, msg, caminho):
         try:

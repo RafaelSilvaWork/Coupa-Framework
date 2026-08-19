@@ -17,6 +17,7 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_FILE = PROJECT_ROOT / "coupa_profiles.json"
 INSTANCE_CONFIG_FILE = PROJECT_ROOT / "coupa_instance.json"
+POWER_AUTOMATE_CONFIG_FILE = PROJECT_ROOT / "coupa_power_automate.json"
 
 # Connection string do Azure Application Insights usada para telemetria de erros.
 # Fica vazia em código-fonte (telemetria desligada) — o workflow de release no
@@ -122,6 +123,31 @@ def set_coupa_base_url(url: str) -> str:
     normalized = _normalize_coupa_base_url(url)
     with open(INSTANCE_CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump({"coupa_base_url": normalized}, f, indent=2, ensure_ascii=False)
+    return normalized
+
+
+def get_power_automate_url() -> str:
+    """Retorna a URL do flow do Power Automate usado para disparo de e-mail
+    (compartilhada por todos os compradores), ou string vazia se nunca foi
+    configurada. Guardada criptografada (mesmo esquema de encrypt_value) -
+    essa URL funciona como uma senha: quem a tiver consegue disparar e-mails
+    pelo flow sem login nenhum.
+    """
+    if not POWER_AUTOMATE_CONFIG_FILE.exists():
+        return ""
+    try:
+        with open(POWER_AUTOMATE_CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return decrypt_value(str(data.get("url", "")).strip())
+    except (json.JSONDecodeError, OSError):
+        return ""
+
+
+def set_power_automate_url(url: str) -> str:
+    """Salva (criptografada) a URL do flow do Power Automate. Retorna a URL normalizada."""
+    normalized = (url or "").strip()
+    with open(POWER_AUTOMATE_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump({"url": encrypt_value(normalized)}, f, indent=2, ensure_ascii=False)
     return normalized
 
 
