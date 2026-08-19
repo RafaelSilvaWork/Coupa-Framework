@@ -18,6 +18,20 @@ _JS_NEXT_SIBLING_TEXT = (
     "element.nextElementSibling.innerText : element.innerText"
 )
 
+_TIPOS_RECURSO_BLOQUEADOS = ("image", "media", "font", "stylesheet")
+
+
+def _bloquear_recursos_pesados(route):
+    """Aborta imagem/mídia/fonte/CSS para acelerar a extração.
+
+    Só é registrado DEPOIS do login confirmado (ver _extrair) - se ativo
+    durante a tela de login do Coupa/SSO, ela carrega sem nenhum estilo,
+    o que dificulta o login manual.
+    """
+    if route.request.resource_type in _TIPOS_RECURSO_BLOQUEADOS:
+        return route.abort()
+    return route.continue_()
+
 
 def _describe_network_error(exc: Exception) -> Optional[str]:
     """Traduz erros comuns de rede/conexão do Playwright para uma mensagem
@@ -125,16 +139,6 @@ class CoupaScraper:
         # abrir um contexto novo via async_playwright() a cada execução.
         try:
             async with PlaywrightContextManager(user_data_dir=str(user_data_dir)) as context:
-                try:
-                    await context.route(
-                        "**/*",
-                        lambda route: route.abort()
-                        if route.request.resource_type in ["image", "media", "font", "stylesheet"]
-                        else route.continue_(),
-                    )
-                except Exception:
-                    pass  # rota já definida em contexto reutilizado
-
                 return await self._extrair(
                     context,
                     log_callback,
@@ -176,6 +180,14 @@ class CoupaScraper:
         if not await self.aguardar_confirmacao_login(log_callback):
             log_callback("❌ Extração cancelada pelo usuário.")
             return extracted_data
+
+        # Só bloqueia imagem/mídia/fonte/CSS a partir daqui - com o login já
+        # confirmado, essas páginas não precisam mais carregar com estilo
+        # completo, e a extração fica mais rápida.
+        try:
+            await context.route("**/*", _bloquear_recursos_pesados)
+        except Exception:
+            pass  # rota já definida em contexto reutilizado
 
         for idx, req in enumerate(self.requisicoes, 1):
             if not await self.aguardar_retomada(log_callback):
