@@ -15,6 +15,20 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from modules.config import MAP_FORNECEDORES, MAP_UNIDADES
 
 _CARACTERES_INVALIDOS_PASTA = re.compile(r'[\\/:*?"<>|\n\r\t]')
+_EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+
+def _extrair_emails_validos(texto: str) -> list:
+    """Extrai e-mails válidos de item["emails"] (coupa_scraper.py).
+
+    Esse campo vem preenchido com uma lista de e-mails encontrados na
+    Justificativa da requisição, ou com um texto-placeholder como
+    "[Não Solicitado]" (extração de e-mails desligada no perfil do
+    comprador) ou "Nenhum e-mail encontrado" (extração ligada, mas nada
+    encontrado). O regex filtra esses placeholders naturalmente, sem
+    precisar conhecer o texto exato usado pelo scraper.
+    """
+    return _EMAIL_REGEX.findall(texto or "")
 
 
 def _nome_pasta_esperado(fornecedor_nome: str) -> str:
@@ -279,6 +293,8 @@ class EmailWorker(QThread):
                 destino_email = self._find_destination_email(localidade)
                 if destino_email:
                     copias_cc.append(destino_email)
+
+            copias_cc.extend(_extrair_emails_validos(item.get("emails", "")))
 
             copias_cc = list(dict.fromkeys([c for c in copias_cc if c and c.strip()]))
 

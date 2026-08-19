@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from PyQt6.QtWidgets import QApplication
 
-from modules.email_sender import EmailWorker, _nome_pasta_esperado
+from modules.email_sender import EmailWorker, _extrair_emails_validos, _nome_pasta_esperado
 
 
 @pytest.fixture(scope="session")
@@ -57,8 +57,10 @@ def _base_smtp_config(tmp_path, **overrides):
     return config
 
 
-def _resultado(requisicao="1", fornecedor="ABC", pedido="100"):
-    return {"requisicao": requisicao, "fornecedor": fornecedor, "pedido": pedido, "localidade": ""}
+def _resultado(requisicao="1", fornecedor="ABC", pedido="100", **extra):
+    item = {"requisicao": requisicao, "fornecedor": fornecedor, "pedido": pedido, "localidade": ""}
+    item.update(extra)
+    return item
 
 
 # ---- _nome_pasta_esperado ----
@@ -142,3 +144,61 @@ def test_anexos_usam_correspondencia_exata_de_pasta_nao_substring(qt_app, monkey
 
     anexados = sorted(Path(p).name for p in captured["attachments"])
     assert anexados == ["arquivo_correto.pdf"]
+
+
+# ---- E-mails da justificativa (item["emails"]) entrando no CC ----
+
+def test_extrair_emails_validos_ignora_placeholder_nao_solicitado():
+    assert _extrair_emails_validos("[Não Solicitado]") == []
+
+
+def test_extrair_emails_validos_ignora_placeholder_nenhum_encontrado():
+    assert _extrair_emails_validos("Nenhum e-mail encontrado") == []
+
+
+def test_extrair_emails_validos_extrai_lista_separada_por_virgula():
+    assert _extrair_emails_validos("fulano@empresa.com, cicla@empresa.com") == [
+        "fulano@empresa.com",
+        "cicla@empresa.com",
+    ]
+
+
+def test_run_adiciona_emails_da_justificativa_no_cc(qt_app, monkeypatch, tmp_path):
+    _FakeSMTP.instances = []
+    monkeypatch.setattr("modules.email_sender.smtplib.SMTP", _FakeSMTP)
+
+    captured = {}
+
+    def _fake_send_via_smtp(self, smtp_connection, sender, destinatario_fornecedor,
+                             copias_cc, subject, html_body, attachments, req):
+        captured["copias_cc"] = list(copias_cc)
+
+    monkeypatch.setattr(EmailWorker, "_send_via_smtp", _fake_send_via_smtp)
+
+    results = [_resultado(emails="fulano@empresa.com, cicla@empresa.com")]
+    worker = EmailWorker(_base_smtp_config(tmp_path), results)
+    worker.run()
+
+    assert "fulano@empresa.com" in captured["copias_cc"]
+    assert "cicla@empresa.com" in captured["copias_cc"]
+
+
+def test_run_nao_adiciona_cc_quando_extracao_de_emails_esta_desligada(qt_app, monkeypatch, tmp_path):
+    # Perfil de comprador que nao marcou "E-mails" na extracao (Aba 1) -
+    # coupa_scraper.py preenche esse placeholder em vez de uma lista real.
+    _FakeSMTP.instances = []
+    monkeypatch.setattr("modules.email_sender.smtplib.SMTP", _FakeSMTP)
+
+    captured = {}
+
+    def _fake_send_via_smtp(self, smtp_connection, sender, destinatario_fornecedor,
+                             copias_cc, subject, html_body, attachments, req):
+        captured["copias_cc"] = list(copias_cc)
+
+    monkeypatch.setattr(EmailWorker, "_send_via_smtp", _fake_send_via_smtp)
+
+    results = [_resultado(emails="[Não Solicitado]")]
+    worker = EmailWorker(_base_smtp_config(tmp_path), results)
+    worker.run()
+
+    assert captured["copias_cc"] == []
