@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 logger = logging.getLogger(__name__)
 
 GITHUB_REPO = "RafaelSilvaWork/Coupa-Framework"
-CURRENT_VERSION = "1.3.0"
+CURRENT_VERSION = "1.3.1"
 
 # Suaviza o limite de 60 requisições/hora sem autenticação da API do GitHub -
 # fácil de estourar em redes com IP compartilhado, onde várias pessoas abrem

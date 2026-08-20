@@ -1,12 +1,12 @@
 [Setup]
 AppName=Coupa Framework - Automação de Suprimentos
-AppVersion=1.3.0
+AppVersion=1.3.1
 AppPublisher=Coupa Framework
 AppPublisherURL=https://github.com/RafaelSilvaWork/Coupa-Framework
 DefaultDirName={localappdata}\CoupaFramework
 DefaultGroupName=Coupa Framework
 OutputDir=installer_output
-OutputBaseFilename=CoupaFramework_Setup_v1.3.0
+OutputBaseFilename=CoupaFramework_Setup_v1.3.1
 SetupIconFile=assets\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -15,7 +15,7 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesInstallIn64BitMode=x64
 UninstallDisplayIcon={app}\CoupaFramework.exe
-UninstallDisplayName=Coupa Framework v1.3.0
+UninstallDisplayName=Coupa Framework v1.3.1
 MinVersion=10.0
 VersionInfoVersion=1.3.0
 VersionInfoCompany=Coupa Framework
