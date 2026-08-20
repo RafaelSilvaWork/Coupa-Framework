@@ -18,7 +18,11 @@ from modules.playwright_pool import PlaywrightContextManager
 
 class DownloadScraper:
     def __init__(self, requisicoes: list[str], pasta_download: str):
-        self.requisicoes = requisicoes
+        # Nunca processa a mesma requisição duas vezes (ex: uma requisição com
+        # 2 pedidos aparece 2x na lista importada da Aba 1) - baixar a mesma
+        # página/anexo de novo é desperdício e ainda gera arquivo duplicado
+        # (analisar_arquivo salva o 2º como "REQ_1.pdf").
+        self.requisicoes = list(dict.fromkeys(r.strip() for r in requisicoes if r.strip()))
         self.pasta_download = pasta_download
         self.arquivos_salvos_na_execucao: list[str] = []
         self.requisicoes_sem_arquivos: list[str] = []
@@ -161,6 +165,77 @@ class DownloadScraper:
             log_callback(f"ERRO CRÍTICO AO INICIAR EDGE: {str(e)}")
             return False
 
+    async def _baixar_e_validar_anexos(
+        self, page, elementos, req: str, log_callback, progress_down_callback,
+    ) -> int:
+        """Baixa cada elemento de anexo e valida com analisar_arquivo (nome + conteúdo).
+
+        Retorna quantos arquivos foram reconhecidos como orçamento e salvos.
+        """
+        total = len(elementos)
+        salvos = 0
+        for i, el in enumerate(elementos, 1):
+            if self.cancelado:
+                break
+            nome = await el.inner_text()
+
+            if self.contem_de_acordo(nome):
+                progress_down_callback(int((i / total) * 100))
+                continue
+
+            arquivo_temporario = os.path.join(self.pasta_download, f"temp_{nome}")
+            try:
+                async with page.expect_download(timeout=30000) as download_info:
+                    await el.click()
+                download = await download_info.value
+                await download.save_as(arquivo_temporario)
+
+                extensoes_suportadas = (".pdf", ".docx", ".xlsx", ".pptx", ".csv", ".txt")
+                if nome.lower().endswith(extensoes_suportadas):
+                    sucesso, _ = self.analisar_arquivo(arquivo_temporario, req, nome)
+                    if sucesso:
+                        salvos += 1
+            except Exception as e:
+                log_callback(f"⚠️ Erro ao baixar anexo '{nome}' da requisição #{req}: {str(e)}")
+            finally:
+                if os.path.exists(arquivo_temporario):
+                    os.remove(arquivo_temporario)
+
+            progress_down_callback(int((i / total) * 100))
+        return salvos
+
+    async def _localizar_container_carrinho(self, page):
+        """Clica em 'Itens do carrinho' e retorna o elemento que envolve essa seção (o card/box).
+
+        A página tem várias outras seções depois de "Itens do carrinho"
+        (Aprovadores, Comentários, Histórico etc.) que também podem ter
+        arquivos anexados - então não dá pra assumir que "tudo que vem
+        depois no documento" é do carrinho. Em vez disso, sobe até o
+        container (card/section) mais próximo e restringe a busca por
+        anexos a DENTRO dele.
+        """
+        aba_carrinho = await page.query_selector("a:has-text('Itens do carrinho')")
+        if not aba_carrinho:
+            return None
+        await aba_carrinho.click()
+        with contextlib.suppress(Exception):
+            await page.wait_for_selector("span.attachment-file", timeout=3000)
+        container = await aba_carrinho.evaluate_handle(
+            "(el) => el.closest('.card, .section, fieldset') || el.parentElement"
+        )
+        return container.as_element()
+
+    @staticmethod
+    async def _particionar_por_container(page, container, elementos):
+        """Separa `elementos` entre os que estão dentro de `container` e os que não estão."""
+        dentro, fora = [], []
+        for el in elementos:
+            if await page.evaluate("([c, e]) => c.contains(e)", [container, el]):
+                dentro.append(el)
+            else:
+                fora.append(el)
+        return dentro, fora
+
     async def _processar(self, context, log_callback, progress_req_callback, progress_down_callback) -> bool:
         coupa_base_url = get_coupa_base_url()
         pages = context.pages
@@ -189,47 +264,41 @@ class DownloadScraper:
                     await page.wait_for_load_state("networkidle", timeout=15000)
                     await page.goto(url, wait_until="load", timeout=60000)
 
+                # 1. Anexo do item do carrinho primeiro - é sempre a versão mais
+                # atualizada do orçamento. Só cai para a seção de Anexos (abaixo)
+                # se o carrinho não tiver arquivo ou o arquivo não validar como orçamento.
+                arquivos_salvos_no_req = 0
+                container_carrinho = await self._localizar_container_carrinho(page)
+
                 try:
                     await page.wait_for_selector("span.attachment-file", timeout=10000)
                 except Exception as e:
                     log_callback(f"ℹ️ Nenhum span.attachment-file encontrado para #{req}: {str(e)}")
 
-                anexos_elementos = await page.query_selector_all("span.attachment-file")
-                total_anexos = len(anexos_elementos)
-                if total_anexos == 0:
-                    self.requisicoes_sem_arquivos.append(req)
-                    progress_req_callback(int((idx / total_reqs) * 100))
-                    continue
+                todos_anexos = await page.query_selector_all("span.attachment-file")
+                if container_carrinho is not None and todos_anexos:
+                    anexos_carrinho, anexos_fora_carrinho = await self._particionar_por_container(
+                        page, container_carrinho, todos_anexos,
+                    )
+                else:
+                    anexos_carrinho, anexos_fora_carrinho = [], todos_anexos
 
-                arquivos_salvos_no_req = 0
-                for i, an_el in enumerate(anexos_elementos, 1):
-                    if self.cancelado:
-                        break
-                    nome = await an_el.inner_text()
+                if anexos_carrinho:
+                    arquivos_salvos_no_req = await self._baixar_e_validar_anexos(
+                        page, anexos_carrinho, req, log_callback, progress_down_callback,
+                    )
+                    if arquivos_salvos_no_req > 0:
+                        log_callback(f"✅ Orçamento encontrado no item do carrinho da requisição #{req}.")
 
-                    if self.contem_de_acordo(nome):
-                        progress_down_callback(int((i / total_anexos) * 100))
+                if arquivos_salvos_no_req == 0:
+                    if not anexos_fora_carrinho:
+                        self.requisicoes_sem_arquivos.append(req)
+                        progress_req_callback(int((idx / total_reqs) * 100))
                         continue
 
-                    arquivo_temporario = os.path.join(self.pasta_download, f"temp_{nome}")
-                    try:
-                        async with page.expect_download(timeout=30000) as download_info:
-                            await an_el.click()
-                        download = await download_info.value
-                        await download.save_as(arquivo_temporario)
-
-                        extensoes_suportadas = (".pdf", ".docx", ".xlsx", ".pptx", ".csv", ".txt")
-                        if nome.lower().endswith(extensoes_suportadas):
-                            sucesso, _ = self.analisar_arquivo(arquivo_temporario, req, nome)
-                            if sucesso:
-                                arquivos_salvos_no_req += 1
-                    except Exception as e:
-                        log_callback(f"⚠️ Erro ao baixar anexo '{nome}' da requisição #{req}: {str(e)}")
-                    finally:
-                        if os.path.exists(arquivo_temporario):
-                            os.remove(arquivo_temporario)
-
-                    progress_down_callback(int((i / total_anexos) * 100))
+                    arquivos_salvos_no_req = await self._baixar_e_validar_anexos(
+                        page, anexos_fora_carrinho, req, log_callback, progress_down_callback,
+                    )
 
                 if arquivos_salvos_no_req == 0:
                     self.requisicoes_sem_arquivos.append(req)

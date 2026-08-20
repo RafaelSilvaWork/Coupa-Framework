@@ -1,4 +1,6 @@
 import base64
+import email
+from email.header import decode_header
 from pathlib import Path
 
 import pytest
@@ -85,7 +87,11 @@ def test_run_abre_uma_unica_conexao_smtp_para_o_lote(qt_app, monkeypatch, tmp_pa
     _FakeSMTP.instances = []
     monkeypatch.setattr("modules.email_sender.smtplib.SMTP", _FakeSMTP)
 
-    results = [_resultado(requisicao="1"), _resultado(requisicao="2"), _resultado(requisicao="3")]
+    results = [
+        _resultado(requisicao="1", fornecedor="ABC"),
+        _resultado(requisicao="2", fornecedor="XYZ"),
+        _resultado(requisicao="3", fornecedor="DEF"),
+    ]
     worker = EmailWorker(_base_smtp_config(tmp_path), results)
 
     finished = []
@@ -95,9 +101,44 @@ def test_run_abre_uma_unica_conexao_smtp_para_o_lote(qt_app, monkeypatch, tmp_pa
     assert len(_FakeSMTP.instances) == 1  # uma única conexão para os 3 e-mails
     conn = _FakeSMTP.instances[0]
     assert conn.login_calls == [("remetente@example.com", "senha-secreta")]  # login uma única vez
-    assert len(conn.sendmail_calls) == 3  # um sendmail por requisição, na mesma conexão
+    assert len(conn.sendmail_calls) == 3  # 3 fornecedores diferentes -> 3 e-mails, mesma conexão
     assert conn.quit_called is True
     assert finished == [(True, "Processo finalizado.")]
+
+
+def test_run_agrupa_pedidos_do_mesmo_fornecedor_em_um_unico_email(qt_app, monkeypatch, tmp_path):
+    """Requisições diferentes do mesmo fornecedor viram 1 e-mail só, com todos os pedidos no assunto."""
+    _FakeSMTP.instances = []
+    monkeypatch.setattr("modules.email_sender.smtplib.SMTP", _FakeSMTP)
+
+    results = [
+        _resultado(requisicao="1", fornecedor="ABC", pedido="100"),
+        _resultado(requisicao="2", fornecedor="ABC", pedido="200"),
+        _resultado(requisicao="3", fornecedor="XYZ", pedido="300"),
+    ]
+    worker = EmailWorker(_base_smtp_config(tmp_path), results)
+    worker.run()
+
+    conn = _FakeSMTP.instances[0]
+    assert len(conn.sendmail_calls) == 2  # 2 fornecedores -> 2 e-mails
+
+    def _assunto(msg_raw: str) -> str:
+        partes = decode_header(email.message_from_string(msg_raw)["Subject"])
+        return "".join(
+            (texto.decode(charset or "utf-8") if isinstance(texto, bytes) else texto)
+            for texto, charset in partes
+        )
+
+    def _corpo_html(msg_raw: str) -> str:
+        parsed = email.message_from_string(msg_raw)
+        parte_html = next(p for p in parsed.walk() if p.get_content_type() == "text/html")
+        return parte_html.get_payload(decode=True).decode("utf-8")
+
+    mensagens = [msg for (_, _, msg) in conn.sendmail_calls]
+    msg_abc = next(m for m in mensagens if "100/200" in _assunto(m))
+    corpo_abc = _corpo_html(msg_abc)
+    assert "Requisição #1" in corpo_abc
+    assert "Requisição #2" in corpo_abc
 
 
 def test_run_reporta_falha_e_nao_envia_quando_conexao_smtp_falha(qt_app, monkeypatch, tmp_path):

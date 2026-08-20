@@ -63,6 +63,17 @@ def _describe_network_error(exc: Exception) -> str | None:
     return None
 
 
+def _extrair_pedidos_emitidos(msgbar_texto: str) -> list[str]:
+    """Extrai todos os "PO nº X" presentes na barra de status (#msgbar) do Coupa.
+
+    Uma requisição pode ter mais de um pedido emitido (ex: item dividido
+    entre fornecedores diferentes) - por isso usa findall em vez de search,
+    e deduplica preservando a ordem de aparição.
+    """
+    matches = re.findall(r'PO\s*nº\s*\d+', msgbar_texto or "", re.IGNORECASE)
+    return list(dict.fromkeys(matches))
+
+
 class CoupaScraper:
     """Scraper para extrair dados de requisições do Coupa."""
 
@@ -224,23 +235,27 @@ class CoupaScraper:
                 with contextlib.suppress(Exception):
                     await page.wait_for_selector(seletor_msgbar_com_po, state="attached", timeout=2500)
 
-                pedido_texto = ""
+                pedidos_encontrados: list[str] = []
                 msgbar_elemento = await page.query_selector("#msgbar")
                 if msgbar_elemento:
                     raw_text = await msgbar_elemento.inner_text()
-                    match_po = re.search(r'PO\s*nº\s*\d+', raw_text, re.IGNORECASE)
-                    if match_po:
-                        pedido_texto = match_po.group(0)
+                    pedidos_encontrados = _extrair_pedidos_emitidos(raw_text)
 
                 await page.evaluate(
                     "() => { const el = document.getElementById('msgbar'); "
                     "if (el) el.textContent = ''; }"
                 )
 
-                if not pedido_texto:
+                if not pedidos_encontrados:
                     log_callback(f"⚠️ Requisição #{req} ignorada: Nenhum pedido emitido.")
                     extracted_data.append({"requisicao": req, "status": "Sem pedido emitido"})
                     continue
+
+                if len(pedidos_encontrados) > 1:
+                    log_callback(
+                        f"ℹ️ Requisição #{req} tem {len(pedidos_encontrados)} pedidos emitidos: "
+                        f"{', '.join(pedidos_encontrados)}."
+                    )
 
                 fornecedor_nome = "Não localizado"
                 fornecedor_numero = "Não localizado"
@@ -373,21 +388,22 @@ class CoupaScraper:
                                         cidade_estado = f"{match_l.group(1).strip()} / {match_l.group(2).strip()}"
                                         break
 
-                extracted_data.append(
-                    {
-                        "requisicao": req,
-                        "status": "Com pedido",
-                        "pedido": pedido_texto,
-                        "fornecedor": fornecedor_nome,
-                        "fornecedor_num": fornecedor_numero,
-                        "criado_por": criado_por,
-                        "criado_por_email": criado_por_email,
-                        "solicitado_por": solicitado_por,
-                        "solicitado_por_email": solicitado_por_email,
-                        "emails": emails,
-                        "localidade": cidade_estado,  # campo canônico único (Item 9)
-                    }
-                )
+                for pedido_texto in pedidos_encontrados:
+                    extracted_data.append(
+                        {
+                            "requisicao": req,
+                            "status": "Com pedido",
+                            "pedido": pedido_texto,
+                            "fornecedor": fornecedor_nome,
+                            "fornecedor_num": fornecedor_numero,
+                            "criado_por": criado_por,
+                            "criado_por_email": criado_por_email,
+                            "solicitado_por": solicitado_por,
+                            "solicitado_por_email": solicitado_por_email,
+                            "emails": emails,
+                            "localidade": cidade_estado,  # campo canônico único (Item 9)
+                        }
+                    )
 
             except Exception as e:
                 mensagem_rede = _describe_network_error(e)

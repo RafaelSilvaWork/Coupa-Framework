@@ -311,21 +311,39 @@ class EmailWorker(QThread):
     def _enviar_todos(
         self, send_mode, smtp_connection, sender, template, pasta_base_arquivos, power_automate_url="",
     ):
+        """Agrupa os resultados por fornecedor e dispara 1 e-mail por grupo.
+
+        Um fornecedor com várias requisições/pedidos no mesmo lote recebe um
+        único e-mail consolidado (assunto com todos os pedidos, corpo com um
+        bloco por pedido, anexos da pasta do fornecedor uma única vez) em vez
+        de um e-mail repetido por linha.
+        """
+        grupos: dict[str, list[dict[str, Any]]] = {}
         for item in self.results:
             # amazonq-ignore-next-line
             if "erro" in item or item.get("status") == "Sem pedido emitido":
                 continue
+            chave = _nome_pasta_esperado(item.get("fornecedor", "").strip())
+            grupos.setdefault(chave, []).append(item)
 
-            req = item.get("requisicao")
-            fornecedor_nome = item.get("fornecedor", "").strip()
-            fornecedor_num = item.get("fornecedor_num", "").strip()
-            localidade = item.get("localidade", "").strip()
+        for itens in grupos.values():
+            self._enviar_grupo_fornecedor(
+                itens, send_mode, smtp_connection, sender, template, pasta_base_arquivos, power_automate_url,
+            )
 
-            destinatario_fornecedor = self._find_supplier_email(fornecedor_nome, fornecedor_num)
-            if not destinatario_fornecedor:
-                destinatario_fornecedor = sender
+    def _enviar_grupo_fornecedor(
+        self, itens, send_mode, smtp_connection, sender, template, pasta_base_arquivos, power_automate_url,
+    ):
+        primeiro = itens[0]
+        fornecedor_nome = primeiro.get("fornecedor", "").strip()
+        fornecedor_num = primeiro.get("fornecedor_num", "").strip()
 
-            copias_cc = []
+        destinatario_fornecedor = self._find_supplier_email(fornecedor_nome, fornecedor_num)
+        if not destinatario_fornecedor:
+            destinatario_fornecedor = sender
+
+        copias_cc = []
+        for item in itens:
             if item.get("criado_por"):
                 email_criado_por = self._find_person_email(item.get("criado_por", ""))
                 if email_criado_por:
@@ -334,71 +352,80 @@ class EmailWorker(QThread):
                 email_solicitado_por = self._find_person_email(item.get("solicitado_por", ""))
                 if email_solicitado_por:
                     copias_cc.append(email_solicitado_por)
-            comprador_email = self.smtp_config.get("comprador_email", "")
-            if comprador_email:
-                for email in re.split(r"[;,]", comprador_email):
-                    email = email.strip()
-                    if email:
-                        copias_cc.append(email)
-
             if item.get("destino") and self.df_unidades is not None:
-                localidade = item.get("localidade", "")
-                destino_email = self._find_destination_email(localidade)
+                destino_email = self._find_destination_email(item.get("localidade", ""))
                 if destino_email:
                     copias_cc.append(destino_email)
-
             copias_cc.extend(_extrair_emails_validos(item.get("emails", "")))
 
-            copias_cc = list(dict.fromkeys([c for c in copias_cc if c and c.strip()]))
+        comprador_email = self.smtp_config.get("comprador_email", "")
+        if comprador_email:
+            for email in re.split(r"[;,]", comprador_email):
+                email = email.strip()
+                if email:
+                    copias_cc.append(email)
 
-            self.log_signal.emit(f"Disparando e-mail individual para Req #{req}...")
-            pedidos = str(item.get("pedido", ""))
-            subject = f"AUTORIZAÇÃO PC {pedidos}"
+        copias_cc = list(dict.fromkeys([c for c in copias_cc if c and c.strip()]))
 
-            if template:
-                html_body = (
-                    template.replace("{pedido}", str(item.get("pedido", "")))
-                    .replace("{req}", str(req))
-                    .replace("{fornecedor}", fornecedor_nome)
-                    .replace("{criado_por}", str(item.get("criado_por", "")))
-                    .replace("{solicitado_por}", str(item.get("solicitado_por", "")))
-                    .replace("{localidade}", localidade)
-                    .replace("{comprador}", str(item.get("comprador", "")))
-                )
-            else:
-                html_body = f"<html><body><h3>Requisição #{req}</h3><p>Pedido: {item.get('pedido')}</p></body></html>"
+        requisicoes = [str(item.get("requisicao", "")) for item in itens]
+        pedidos = [str(item.get("pedido", "")) for item in itens if item.get("pedido")]
+        subject = f"AUTORIZAÇÃO PC {'/'.join(pedidos)}"
 
-            attachments = []
-            if self.attachment_path and os.path.exists(self.attachment_path):
-                attachments.append(self.attachment_path)
+        if template:
+            blocos_html = [
+                template.replace("{pedido}", str(item.get("pedido", "")))
+                .replace("{req}", str(item.get("requisicao", "")))
+                .replace("{fornecedor}", fornecedor_nome)
+                .replace("{criado_por}", str(item.get("criado_por", "")))
+                .replace("{solicitado_por}", str(item.get("solicitado_por", "")))
+                .replace("{localidade}", item.get("localidade", "").strip())
+                .replace("{comprador}", str(item.get("comprador", "")))
+                for item in itens
+            ]
+            html_body = "<hr>".join(blocos_html)
+        else:
+            linhas_html = "".join(
+                f"<li>Requisição #{item.get('requisicao')} - Pedido: {item.get('pedido')}</li>"
+                for item in itens
+            )
+            html_body = f"<html><body><h3>Fornecedor: {fornecedor_nome}</h3><ul>{linhas_html}</ul></body></html>"
 
-            if pasta_base_arquivos and os.path.exists(pasta_base_arquivos):
-                nome_pasta_esperado = _nome_pasta_esperado(fornecedor_nome)
-                for pasta in os.listdir(pasta_base_arquivos):
-                    if pasta.lower() == nome_pasta_esperado:
-                        caminho_pasta = os.path.join(pasta_base_arquivos, pasta)
-                        for arquivo in os.listdir(caminho_pasta):
-                            caminho_arquivo = os.path.join(caminho_pasta, arquivo)
-                            if os.path.isfile(caminho_arquivo):
-                                attachments.append(caminho_arquivo)
-                                self.log_signal.emit(f"📎 Anexado arquivo da pasta: {arquivo}")
+        attachments = []
+        if self.attachment_path and os.path.exists(self.attachment_path):
+            attachments.append(self.attachment_path)
 
-            if send_mode == "smtp":
-                self._send_via_smtp(
-                    smtp_connection, sender, destinatario_fornecedor,
-                    copias_cc, subject, html_body, attachments, req,
-                )
-            elif send_mode == "power_automate":
-                self._send_via_power_automate(
-                    power_automate_url, destinatario_fornecedor,
-                    copias_cc, subject, html_body, attachments, req,
-                )
-            else:
-                self._send_via_outlook(sender, destinatario_fornecedor, copias_cc, subject, html_body, attachments)
+        if pasta_base_arquivos and os.path.exists(pasta_base_arquivos):
+            nome_pasta_esperado = _nome_pasta_esperado(fornecedor_nome)
+            for pasta in os.listdir(pasta_base_arquivos):
+                if pasta.lower() == nome_pasta_esperado:
+                    caminho_pasta = os.path.join(pasta_base_arquivos, pasta)
+                    for arquivo in os.listdir(caminho_pasta):
+                        caminho_arquivo = os.path.join(caminho_pasta, arquivo)
+                        if os.path.isfile(caminho_arquivo):
+                            attachments.append(caminho_arquivo)
+                            self.log_signal.emit(f"📎 Anexado arquivo da pasta: {arquivo}")
+
+        label_req = ", ".join(requisicoes)
+        self.log_signal.emit(
+            f"Disparando e-mail consolidado para {fornecedor_nome} ({len(itens)} pedido(s), Req #{label_req})..."
+        )
+
+        if send_mode == "smtp":
+            self._send_via_smtp(
+                smtp_connection, sender, destinatario_fornecedor,
+                copias_cc, subject, html_body, attachments, label_req,
+            )
+        elif send_mode == "power_automate":
+            self._send_via_power_automate(
+                power_automate_url, destinatario_fornecedor,
+                copias_cc, subject, html_body, attachments, label_req,
+            )
+        else:
+            self._send_via_outlook(sender, destinatario_fornecedor, copias_cc, subject, html_body, attachments)
 
     def _send_via_smtp(
         self, smtp_connection, sender, destinatario_fornecedor,
-        copias_cc, subject, html_body, attachments, req,
+        copias_cc, subject, html_body, attachments, label_req,
     ):
         msg = MIMEMultipart()
         msg["From"] = sender
@@ -413,9 +440,9 @@ class EmailWorker(QThread):
 
         try:
             smtp_connection.sendmail(sender, [destinatario_fornecedor] + copias_cc, msg.as_string())
-            self.log_signal.emit(f"✅ E-mail enviado: Req #{req} via SMTP!")
+            self.log_signal.emit(f"✅ E-mail enviado: Req #{label_req} via SMTP!")
         except Exception as smtp_err:
-            self.log_signal.emit(f"❌ Falha envio #{req} via SMTP: {str(smtp_err)}")
+            self.log_signal.emit(f"❌ Falha envio #{label_req} via SMTP: {str(smtp_err)}")
 
     def _send_via_outlook(self, sender, destinatario_fornecedor, copias_cc, subject, html_body, attachments):
         try:
@@ -437,7 +464,7 @@ class EmailWorker(QThread):
             self.log_signal.emit(f"❌ Falha envio via Outlook: {str(outlook_err)}")
 
     def _send_via_power_automate(
-        self, url, destinatario_fornecedor, copias_cc, subject, html_body, attachments, req,
+        self, url, destinatario_fornecedor, copias_cc, subject, html_body, attachments, label_req,
     ):
         payload = {
             "destinatario": destinatario_fornecedor,
@@ -449,9 +476,9 @@ class EmailWorker(QThread):
         try:
             response = requests.post(url, json=payload, timeout=60)
             response.raise_for_status()
-            self.log_signal.emit(f"✅ E-mail enviado: Req #{req} via Power Automate!")
+            self.log_signal.emit(f"✅ E-mail enviado: Req #{label_req} via Power Automate!")
         except requests.RequestException as power_automate_err:
-            self.log_signal.emit(f"❌ Falha envio #{req} via Power Automate: {str(power_automate_err)}")
+            self.log_signal.emit(f"❌ Falha envio #{label_req} via Power Automate: {str(power_automate_err)}")
 
     def _codificar_anexos_base64(self, attachments):
         anexos = []
