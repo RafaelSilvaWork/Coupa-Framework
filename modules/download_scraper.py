@@ -15,6 +15,14 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from modules.config import PALAVRAS_CHAVE, PERFIL_EDGE_DOWNLOAD, get_coupa_base_url
 from modules.playwright_pool import PlaywrightContextManager
 
+# Seletor combinado dos dois formatos de anexo que o Coupa usa:
+# - `span.attachment-file`: anexos da seção "Anexos" (Justificativa, lá em cima).
+# - `span[aria-label^='Anexo de arquivo']`: anexos ligados direto ao item do
+#   carrinho (e possivelmente a outras seções, como comentários) - identificado
+#   por role="button" + aria-label "Anexo de arquivo de <nome>", sem a classe
+#   attachment-file.
+_SELETOR_ANEXOS = "span.attachment-file, span[aria-label^='Anexo de arquivo']"
+
 
 class DownloadScraper:
     def __init__(self, requisicoes: list[str], pasta_download: str):
@@ -219,7 +227,7 @@ class DownloadScraper:
             return None
         await aba_carrinho.click()
         with contextlib.suppress(Exception):
-            await page.wait_for_selector("span.attachment-file", timeout=3000)
+            await page.wait_for_selector(_SELETOR_ANEXOS, timeout=3000)
         container = await aba_carrinho.evaluate_handle(
             "(el) => el.closest('.card, .section, fieldset') || el.parentElement"
         )
@@ -271,11 +279,11 @@ class DownloadScraper:
                 container_carrinho = await self._localizar_container_carrinho(page)
 
                 try:
-                    await page.wait_for_selector("span.attachment-file", timeout=10000)
+                    await page.wait_for_selector(_SELETOR_ANEXOS, timeout=10000)
                 except Exception as e:
-                    log_callback(f"ℹ️ Nenhum span.attachment-file encontrado para #{req}: {str(e)}")
+                    log_callback(f"ℹ️ Nenhum anexo encontrado para #{req}: {str(e)}")
 
-                todos_anexos = await page.query_selector_all("span.attachment-file")
+                todos_anexos = await page.query_selector_all(_SELETOR_ANEXOS)
                 if container_carrinho is not None and todos_anexos:
                     anexos_carrinho, anexos_fora_carrinho = await self._particionar_por_container(
                         page, container_carrinho, todos_anexos,
