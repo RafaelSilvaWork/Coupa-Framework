@@ -103,7 +103,8 @@ def _normalize_version(value: str) -> Optional[tuple[int, int, int]]:
     if len(parts) != 3:
         return None
     try:
-        return tuple(int(part) for part in parts)
+        major, minor, patch = (int(part) for part in parts)
+        return (major, minor, patch)
     except ValueError:
         return None
 

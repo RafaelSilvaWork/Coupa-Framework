@@ -3,7 +3,7 @@ import os
 import re
 import shutil
 import traceback
-from typing import List
+from typing import Callable, List, Optional
 
 import fitz  # PyMuPDF (já está no requirements.txt)
 from docx import Document
@@ -19,9 +19,10 @@ class DownloadScraper:
     def __init__(self, requisicoes: List[str], pasta_download: str):
         self.requisicoes = requisicoes
         self.pasta_download = pasta_download
-        self.arquivos_salvos_na_execucao = []
-        self.requisicoes_sem_arquivos = []
+        self.arquivos_salvos_na_execucao: List[str] = []
+        self.requisicoes_sem_arquivos: List[str] = []
         self.cancelado = False
+        self._log_callback: Optional[Callable[[str], None]] = None
 
     @staticmethod
     def normalizar_texto(texto: str) -> str:
@@ -38,13 +39,13 @@ class DownloadScraper:
     def _extrair_texto_log(self, msg: str) -> None:
         """Melhoria 8: loga erro via _log_callback ou logger padrão."""
         try:
-            if hasattr(self, '_log_callback') and self._log_callback:
+            if self._log_callback:
                 self._log_callback(msg)
             else:
                 import logging
                 logging.getLogger(__name__).warning(msg)
         except Exception:
-            pass
+            pass  # best-effort: nem o log de erro deve derrubar o fluxo
 
     def extrair_texto(self, caminho_arquivo: str) -> str:
         """Extrai texto de arquivos PDF, DOCX, TXT, CSV, XLSX, PPTX.
@@ -283,7 +284,7 @@ class DownloadWorker(QThread):
             try:
                 self.log_signal.emit(tb.format_exc())
             except Exception:
-                pass
+                pass  # best-effort: não deixa o log do traceback mascarar o erro original
             # Garante que a UI não fique presa com botões desabilitados
             self.finished_signal.emit(False, [], self.scraper.requisicoes_sem_arquivos)
         finally:
@@ -291,7 +292,7 @@ class DownloadWorker(QThread):
                 try:
                     loop.close()
                 except Exception:
-                    pass
+                    pass  # best-effort: loop pode já estar fechado
 
     def cancelar(self) -> None:
         self.scraper.cancelado = True

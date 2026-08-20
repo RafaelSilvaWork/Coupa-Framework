@@ -257,7 +257,7 @@ def decrypt_value(ciphertext: str) -> str:
     try:
         return _get_fernet().decrypt(ciphertext.encode("utf-8")).decode("utf-8")
     except Exception:
-        pass
+        pass  # tenta a chave legada abaixo antes de desistir
     try:
         # Compatibilidade com perfis gravados antes do aumento de
         # PBKDF2_ITERATIONS (ver comentário acima da constante).

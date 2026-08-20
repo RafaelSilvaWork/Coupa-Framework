@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -28,7 +28,7 @@ class PdfGeneratorWorker(QThread):
         self,
         pedidos: List[str],
         pasta_saida: str,
-        requisicoes_por_pedido: Dict[str, List[str]] = None,
+        requisicoes_por_pedido: Optional[Dict[str, List[str]]] = None,
     ):
         super().__init__()
         self.pedidos = pedidos
@@ -93,12 +93,12 @@ class PdfGeneratorWorker(QThread):
                 try:
                     page.goto(get_url_teste_login(), wait_until="domcontentloaded")
                 except Exception:
-                    pass
+                    pass  # timeout esperado se a página de teste já estiver carregada
 
                 try:
                     page.wait_for_load_state("networkidle", timeout=8000)
                 except Exception:
-                    pass
+                    pass  # rede pode nunca ficar ociosa; segue com o que já carregou
 
                 deslogado = (
                     "login" in page.url.lower()
@@ -136,7 +136,7 @@ class PdfGeneratorWorker(QThread):
                         try:
                             page.wait_for_load_state("load", timeout=5000)
                         except Exception:
-                            pass
+                            pass  # timeout esperado; a checagem de "documento pronto" segue abaixo
 
                         doc_pronto = False
                         for tentativa in range(1, MAX_TENTATIVAS + 1):

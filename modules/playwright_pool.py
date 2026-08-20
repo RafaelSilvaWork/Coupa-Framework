@@ -108,7 +108,7 @@ class PlaywrightPool:
             try:
                 await self._contexts[context_key].close()
             except Exception:
-                pass
+                pass  # best-effort: contexto já pode estar fechado/inválido
             del self._contexts[context_key]
             del self._ref_count[context_key]
 
@@ -118,14 +118,14 @@ class PlaywrightPool:
             try:
                 await self._contexts[key].close()
             except Exception:
-                pass
+                pass  # best-effort: encerramento não deve travar por contexto já fechado
         self._contexts.clear()
         self._ref_count.clear()
         if self._playwright:
             try:
                 await self._playwright.stop()
             except Exception:
-                pass
+                pass  # best-effort: idem, app está encerrando de qualquer forma
             self._playwright = None
             self._playwright_loop = None
 
@@ -141,7 +141,7 @@ def cleanup_playwright_pool() -> None:
         loop.run_until_complete(pool.cleanup_all())
         loop.close()
     except Exception:
-        pass
+        pass  # best-effort: chamado no closeEvent do app, não deve impedir o fechamento
 
 
 class PlaywrightContextManager:
@@ -217,11 +217,11 @@ class PlaywrightContextSyncManager:
             if self._context is not None:
                 self._context.close()
         except Exception:
-            pass
+            pass  # best-effort: contexto pode já estar fechado
         try:
             if self._playwright is not None:
                 self._playwright.stop()
         except Exception:
-            pass
+            pass  # best-effort: idem
         return False
 

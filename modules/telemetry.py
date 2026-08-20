@@ -67,7 +67,7 @@ def init_telemetry() -> None:
         sys.excepthook = _report_unhandled_exception
         _initialized = True
     except Exception:
-        pass
+        pass  # best-effort: telemetria é opcional, falha aqui não deve afetar o app
 
 
 def _report_unhandled_exception(exc_type, exc_value, exc_traceback):

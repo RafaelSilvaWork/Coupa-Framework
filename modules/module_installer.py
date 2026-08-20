@@ -109,6 +109,8 @@ class ModuleInstallWorker(QThread):
     def _download_asset(self, asset: dict, assets: list) -> str:
         temp_path = Path(tempfile.gettempdir()) / asset["name"]
         url = asset.get("browser_download_url")
+        if not isinstance(url, str):
+            raise ValueError(f"Asset sem browser_download_url válido: {asset!r}")
         with requests.get(url, timeout=60, stream=True) as download_response:
             download_response.raise_for_status()
             total = int(download_response.headers.get("Content-Length", 0))

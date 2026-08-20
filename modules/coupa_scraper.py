@@ -117,7 +117,7 @@ class CoupaScraper:
         return True
 
     async def run(self, log_callback, edge_ready_callback=None) -> List[Dict[str, Any]]:
-        extracted_data = []
+        extracted_data: List[Dict[str, Any]] = []
         log_callback("⚡ Iniciando Edge em modo rápido...")
 
         caminho_edge = resolve_edge_executable()
@@ -253,7 +253,7 @@ class CoupaScraper:
                     try:
                         await page.wait_for_selector("a[href*='/suppliers/show/']", timeout=3000)
                     except Exception:
-                        pass
+                        pass  # timeout esperado quando o fornecedor não tem link de detalhe
 
                 fornecedor_link = await page.query_selector("a.s-coupaSimpleTooltip[href*='/suppliers/show/']")
                 if not fornecedor_link:
@@ -472,7 +472,7 @@ class AutomationWorker(QThread):
                 import traceback
                 self.log_signal.emit(traceback.format_exc())
             except Exception:
-                pass
+                pass  # best-effort: não deixa o log do traceback mascarar o erro original
             # Garante que a UI não fique presa com botões desabilitados
             self.finished_signal.emit([{"erro": f"Falha crítica na automação: {str(e)}"}])
         finally:
@@ -480,5 +480,5 @@ class AutomationWorker(QThread):
                 try:
                     loop.close()
                 except Exception:
-                    pass
+                    pass  # best-effort: loop pode já estar fechado
 

@@ -218,7 +218,7 @@ class OrcamentoDownloaderWidget(QWidget):
                     try:
                         os.remove(os.path.join(self.pasta_download, f))
                     except Exception:
-                        pass
+                        pass  # best-effort: limpeza de temporários, arquivo pode já ter sumido
 
         if not sucesso:
             self.log("\U0001f6d1 Operacao cancelada pelo usuario.")
@@ -234,11 +234,11 @@ class OrcamentoDownloaderWidget(QWidget):
             self.log(resumo)
             self.automatico_finished.emit(True, resumo)
         else:
-            resumo = [f"\U0001f3c1 Processo concluido: {len(salvos)} orcamento(s) salvo(s)."]
+            linhas_resumo = [f"\U0001f3c1 Processo concluido: {len(salvos)} orcamento(s) salvo(s)."]
             if sem_arquivos:
-                resumo.append(f"\u26a0\ufe0f Requisicoes sem arquivos validos: {len(sem_arquivos)}")
-                resumo.append("Requisicoes: " + ", ".join(sem_arquivos))
-            self.log(" | ".join(resumo))
-            QMessageBox.information(self, "Concluido", "\n".join(resumo))
+                linhas_resumo.append(f"\u26a0\ufe0f Requisicoes sem arquivos validos: {len(sem_arquivos)}")
+                linhas_resumo.append("Requisicoes: " + ", ".join(sem_arquivos))
+            self.log(" | ".join(linhas_resumo))
+            QMessageBox.information(self, "Concluido", "\n".join(linhas_resumo))
             self.parent_fw.tab_widget.setCurrentIndex(2)
 

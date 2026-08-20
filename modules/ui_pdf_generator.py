@@ -28,7 +28,7 @@ class PedidoPdfGeneratorWidget(QWidget):
         super().__init__()
         self.parent_fw = parent_framework
         self.pasta_saida: str = ""
-        self.worker = None
+        self.worker: PdfGeneratorWorker | None = None
         self._user_editou_manualmente: bool = False
         # Melhoria 5: ModoAutomatico é um singleton centralizado em
         # fluxo_orquestrador.get_modo_automatico() — as abas compartilham a MESMA instância.
@@ -182,7 +182,7 @@ class PedidoPdfGeneratorWidget(QWidget):
 
         linhas = texto.splitlines()
         pedidos = []
-        requisicoes_por_pedido = {}
+        requisicoes_por_pedido: dict[str, list[str]] = {}
         vistos = set()
         for linha in linhas:
             colunas = [valor.strip() for valor in linha.split("\t")]

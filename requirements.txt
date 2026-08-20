@@ -1,4 +1,4 @@
-# Dependências pinadas (Item 12) — geradas com `pip freeze` em 2025-07
+# Dependências pinadas (Item 12) — geradas com `pip freeze` em 2026-07
 # Para atualizar: pip install -r requirements.txt && pip freeze > requirements.lock
 pandas==3.0.3
 openpyxl==3.1.5

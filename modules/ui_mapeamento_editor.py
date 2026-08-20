@@ -36,8 +36,10 @@ class MapeamentoEditorDialog(QDialog):
         cabecalhos = [nome_label, "Código", "Email"] if com_codigo else [nome_label, "Email"]
         self.tabela = QTableWidget(0, self._num_colunas)
         self.tabela.setHorizontalHeaderLabels(cabecalhos)
-        for coluna in range(self._num_colunas):
-            self.tabela.horizontalHeader().setSectionResizeMode(coluna, QHeaderView.ResizeMode.Stretch)
+        header = self.tabela.horizontalHeader()
+        if header is not None:
+            for coluna in range(self._num_colunas):
+                header.setSectionResizeMode(coluna, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.tabela, 1)
 
         if com_codigo:

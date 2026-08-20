@@ -28,11 +28,8 @@ jobs:
       - name: Ruff check
         run: python -m ruff check .
 
-      - name: Checagem estatica de tipos (modules/services)
-        # Escopo inicial limitado a modules/services (camada de regra de
-        # negocio, ver ARCHITECTURE.md) - o restante do codigo ainda nao foi
-        # tipado o suficiente para passar sem uma limpeza grande em separado.
-        run: python -m mypy modules/services --ignore-missing-imports
+      - name: Checagem estatica de tipos (modules)
+        run: python -m mypy modules --ignore-missing-imports
 
       - name: Run tests with coverage
         run: python -m pytest -q --cov=modules --cov-report=term-missing --cov-report=xml

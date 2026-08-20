@@ -304,7 +304,7 @@ class EmailWorker(QThread):
                 try:
                     smtp_connection.quit()
                 except Exception:
-                    pass
+                    pass  # best-effort: conexão pode já ter caído
 
         password = None
         self.finished_signal.emit(True, "Processo finalizado.")
