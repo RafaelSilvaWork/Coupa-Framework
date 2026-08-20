@@ -200,9 +200,16 @@ class DownloadScraper:
 
                 extensoes_suportadas = (".pdf", ".docx", ".xlsx", ".pptx", ".csv", ".txt")
                 if nome.lower().endswith(extensoes_suportadas):
-                    sucesso, _ = self.analisar_arquivo(arquivo_temporario, req, nome)
+                    sucesso, motivo = self.analisar_arquivo(arquivo_temporario, req, nome)
                     if sucesso:
                         salvos += 1
+                    else:
+                        log_callback(
+                            f"ℹ️ Anexo '{nome}' da requisição #{req} não reconhecido como "
+                            f"orçamento (motivo: {motivo})."
+                        )
+                else:
+                    log_callback(f"ℹ️ Anexo '{nome}' da requisição #{req} ignorado: extensão não suportada.")
             except Exception as e:
                 log_callback(f"⚠️ Erro ao baixar anexo '{nome}' da requisição #{req}: {str(e)}")
             finally:
@@ -277,6 +284,8 @@ class DownloadScraper:
                 # se o carrinho não tiver arquivo ou o arquivo não validar como orçamento.
                 arquivos_salvos_no_req = 0
                 container_carrinho = await self._localizar_container_carrinho(page)
+                if container_carrinho is None:
+                    log_callback(f"ℹ️ #{req}: link/seção 'Itens do carrinho' não encontrado na página.")
 
                 try:
                     await page.wait_for_selector(_SELETOR_ANEXOS, timeout=10000)
@@ -290,6 +299,11 @@ class DownloadScraper:
                     )
                 else:
                     anexos_carrinho, anexos_fora_carrinho = [], todos_anexos
+
+                log_callback(
+                    f"🔎 #{req}: {len(anexos_carrinho)} anexo(s) no item do carrinho, "
+                    f"{len(anexos_fora_carrinho)} na seção de Anexos."
+                )
 
                 if anexos_carrinho:
                     arquivos_salvos_no_req = await self._baixar_e_validar_anexos(
