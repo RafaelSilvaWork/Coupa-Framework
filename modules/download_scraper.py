@@ -15,13 +15,15 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from modules.config import PALAVRAS_CHAVE, PERFIL_EDGE_DOWNLOAD, get_coupa_base_url
 from modules.playwright_pool import PlaywrightContextManager
 
-# Seletor combinado dos dois formatos de anexo que o Coupa usa:
-# - `span.attachment-file`: anexos da seção "Anexos" (Justificativa, lá em cima).
-# - `span[aria-label^='Anexo de arquivo']`: anexos ligados direto ao item do
-#   carrinho (e possivelmente a outras seções, como comentários) - identificado
-#   por role="button" + aria-label "Anexo de arquivo de <nome>", sem a classe
-#   attachment-file.
-_SELETOR_ANEXOS = "span.attachment-file, span[aria-label^='Anexo de arquivo']"
+# O Coupa usa 2 componentes de UI diferentes para anexo, cada um com seu
+# próprio seletor - não precisam de escopo por posição/container pra não se
+# confundir, já que não compartilham classe/atributo:
+# - Anexos da seção "Anexos" (Justificativa, lá em cima): span.attachment-file
+# - Anexo ligado ao item do carrinho: span com role="button" e
+#   aria-label="Anexo de arquivo de <nome>" (HTML real inspecionado no Coupa),
+#   sem a classe attachment-file.
+_SELETOR_ANEXO_TOPO = "span.attachment-file"
+_SELETOR_ANEXO_CARRINHO = "span[aria-label^='Anexo de arquivo']"
 
 
 class DownloadScraper:
@@ -219,37 +221,21 @@ class DownloadScraper:
             progress_down_callback(int((i / total) * 100))
         return salvos
 
-    async def _localizar_container_carrinho(self, page):
-        """Clica em 'Itens do carrinho' e retorna o elemento que envolve essa seção (o card/box).
+    async def _localizar_anexos_carrinho(self, page):
+        """Clica em 'Itens do carrinho' e retorna os anexos ligados aos itens do carrinho.
 
-        A página tem várias outras seções depois de "Itens do carrinho"
-        (Aprovadores, Comentários, Histórico etc.) que também podem ter
-        arquivos anexados - então não dá pra assumir que "tudo que vem
-        depois no documento" é do carrinho. Em vez disso, sobe até o
-        container (card/section) mais próximo e restringe a busca por
-        anexos a DENTRO dele.
+        Usa um seletor próprio (span com aria-label "Anexo de arquivo de...",
+        ver _SELETOR_ANEXO_CARRINHO) que não é compartilhado com a seção de
+        Anexos de cima, então não precisa restringir por posição/container -
+        os dois seletores já não se confundem.
         """
         aba_carrinho = await page.query_selector("a:has-text('Itens do carrinho')")
         if not aba_carrinho:
-            return None
+            return []
         await aba_carrinho.click()
         with contextlib.suppress(Exception):
-            await page.wait_for_selector(_SELETOR_ANEXOS, timeout=3000)
-        container = await aba_carrinho.evaluate_handle(
-            "(el) => el.closest('.card, .section, fieldset') || el.parentElement"
-        )
-        return container.as_element()
-
-    @staticmethod
-    async def _particionar_por_container(page, container, elementos):
-        """Separa `elementos` entre os que estão dentro de `container` e os que não estão."""
-        dentro, fora = [], []
-        for el in elementos:
-            if await page.evaluate("([c, e]) => c.contains(e)", [container, el]):
-                dentro.append(el)
-            else:
-                fora.append(el)
-        return dentro, fora
+            await page.wait_for_selector(_SELETOR_ANEXO_CARRINHO, timeout=3000)
+        return await page.query_selector_all(_SELETOR_ANEXO_CARRINHO)
 
     async def _processar(self, context, log_callback, progress_req_callback, progress_down_callback) -> bool:
         coupa_base_url = get_coupa_base_url()
@@ -283,27 +269,8 @@ class DownloadScraper:
                 # atualizada do orçamento. Só cai para a seção de Anexos (abaixo)
                 # se o carrinho não tiver arquivo ou o arquivo não validar como orçamento.
                 arquivos_salvos_no_req = 0
-                container_carrinho = await self._localizar_container_carrinho(page)
-                if container_carrinho is None:
-                    log_callback(f"ℹ️ #{req}: link/seção 'Itens do carrinho' não encontrado na página.")
-
-                try:
-                    await page.wait_for_selector(_SELETOR_ANEXOS, timeout=10000)
-                except Exception as e:
-                    log_callback(f"ℹ️ Nenhum anexo encontrado para #{req}: {str(e)}")
-
-                todos_anexos = await page.query_selector_all(_SELETOR_ANEXOS)
-                if container_carrinho is not None and todos_anexos:
-                    anexos_carrinho, anexos_fora_carrinho = await self._particionar_por_container(
-                        page, container_carrinho, todos_anexos,
-                    )
-                else:
-                    anexos_carrinho, anexos_fora_carrinho = [], todos_anexos
-
-                log_callback(
-                    f"🔎 #{req}: {len(anexos_carrinho)} anexo(s) no item do carrinho, "
-                    f"{len(anexos_fora_carrinho)} na seção de Anexos."
-                )
+                anexos_carrinho = await self._localizar_anexos_carrinho(page)
+                log_callback(f"🔎 #{req}: {len(anexos_carrinho)} anexo(s) no item do carrinho.")
 
                 if anexos_carrinho:
                     arquivos_salvos_no_req = await self._baixar_e_validar_anexos(
@@ -313,13 +280,19 @@ class DownloadScraper:
                         log_callback(f"✅ Orçamento encontrado no item do carrinho da requisição #{req}.")
 
                 if arquivos_salvos_no_req == 0:
-                    if not anexos_fora_carrinho:
+                    try:
+                        await page.wait_for_selector(_SELETOR_ANEXO_TOPO, timeout=10000)
+                    except Exception as e:
+                        log_callback(f"ℹ️ Nenhum anexo encontrado na seção de Anexos para #{req}: {str(e)}")
+
+                    anexos_topo = await page.query_selector_all(_SELETOR_ANEXO_TOPO)
+                    if not anexos_topo:
                         self.requisicoes_sem_arquivos.append(req)
                         progress_req_callback(int((idx / total_reqs) * 100))
                         continue
 
                     arquivos_salvos_no_req = await self._baixar_e_validar_anexos(
-                        page, anexos_fora_carrinho, req, log_callback, progress_down_callback,
+                        page, anexos_topo, req, log_callback, progress_down_callback,
                     )
 
                 if arquivos_salvos_no_req == 0:
