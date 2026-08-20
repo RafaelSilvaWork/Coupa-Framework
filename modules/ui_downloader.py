@@ -1,15 +1,25 @@
+import contextlib
 import os
+
+from PyQt6.QtCore import pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QGroupBox, QProgressBar, QFileDialog, QMessageBox
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import pyqtSlot, pyqtSignal
 
 from modules.download_scraper import DownloadWorker
 from modules.fluxo_orquestrador import get_modo_automatico
-from modules.services.data_bus import DataBus
 from modules.logger import UILogger
-from modules.styles import set_status, scrollable
+from modules.services.data_bus import DataBus
+from modules.styles import scrollable, set_status
 
 
 class OrcamentoDownloaderWidget(QWidget):
@@ -215,10 +225,9 @@ class OrcamentoDownloaderWidget(QWidget):
         if os.path.exists(self.pasta_download):
             for f in os.listdir(self.pasta_download):
                 if f.startswith("temp_"):
-                    try:
+                    with contextlib.suppress(Exception):
+                        # best-effort: limpeza de temporários, arquivo pode já ter sumido
                         os.remove(os.path.join(self.pasta_download, f))
-                    except Exception:
-                        pass  # best-effort: limpeza de temporários, arquivo pode já ter sumido
 
         if not sucesso:
             self.log("\U0001f6d1 Operacao cancelada pelo usuario.")

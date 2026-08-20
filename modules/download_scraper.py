@@ -1,9 +1,10 @@
+import contextlib
 import csv
 import os
 import re
 import shutil
 import traceback
-from typing import Callable, List, Optional
+from collections.abc import Callable
 
 import fitz  # PyMuPDF (já está no requirements.txt)
 from docx import Document
@@ -16,13 +17,13 @@ from modules.playwright_pool import PlaywrightContextManager
 
 
 class DownloadScraper:
-    def __init__(self, requisicoes: List[str], pasta_download: str):
+    def __init__(self, requisicoes: list[str], pasta_download: str):
         self.requisicoes = requisicoes
         self.pasta_download = pasta_download
-        self.arquivos_salvos_na_execucao: List[str] = []
-        self.requisicoes_sem_arquivos: List[str] = []
+        self.arquivos_salvos_na_execucao: list[str] = []
+        self.requisicoes_sem_arquivos: list[str] = []
         self.cancelado = False
-        self._log_callback: Optional[Callable[[str], None]] = None
+        self._log_callback: Callable[[str], None] | None = None
 
     @staticmethod
     def normalizar_texto(texto: str) -> str:
@@ -64,7 +65,7 @@ class DownloadScraper:
                 for paragrafo in documento.paragraphs:
                     texto += paragrafo.text + "\n"
             elif extensao == ".txt":
-                with open(caminho_arquivo, "r", encoding="utf-8", errors="ignore") as f:
+                with open(caminho_arquivo, encoding="utf-8", errors="ignore") as f:
                     texto = f.read()
             elif extensao == ".csv":
                 with open(caminho_arquivo, newline="", encoding="utf-8", errors="ignore") as f:
@@ -101,10 +102,7 @@ class DownloadScraper:
         if all(term in texto_normalizado for term in header_terms):
             return True
 
-        if "escopos ajustados" in texto_normalizado and "de acordo" in texto_normalizado:
-            return True
-
-        return False
+        return "escopos ajustados" in texto_normalizado and "de acordo" in texto_normalizado
 
     def analisar_arquivo(
         self,
@@ -251,7 +249,7 @@ class DownloadWorker(QThread):
     progress_down_signal = pyqtSignal(int)
     finished_signal = pyqtSignal(bool, list, list)
 
-    def __init__(self, requisicoes: List[str], pasta_download: str):
+    def __init__(self, requisicoes: list[str], pasta_download: str):
         super().__init__()
         self.scraper = DownloadScraper(requisicoes, pasta_download)
         # Melhoria 8: expõe o log_callback ao scraper para que extrair_texto
@@ -281,18 +279,15 @@ class DownloadWorker(QThread):
             )
         except Exception as e:
             self.log_signal.emit(f"❌ ERRO CRÍTICO na thread de download: {str(e)}")
-            try:
+            with contextlib.suppress(Exception):
+                # best-effort: não deixa o log do traceback mascarar o erro original
                 self.log_signal.emit(tb.format_exc())
-            except Exception:
-                pass  # best-effort: não deixa o log do traceback mascarar o erro original
             # Garante que a UI não fique presa com botões desabilitados
             self.finished_signal.emit(False, [], self.scraper.requisicoes_sem_arquivos)
         finally:
             if loop is not None:
-                try:
-                    loop.close()
-                except Exception:
-                    pass  # best-effort: loop pode já estar fechado
+                with contextlib.suppress(Exception):
+                    loop.close()  # best-effort: loop pode já estar fechado
 
     def cancelar(self) -> None:
         self.scraper.cancelado = True

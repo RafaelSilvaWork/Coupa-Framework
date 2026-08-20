@@ -1,17 +1,18 @@
 import base64
+import contextlib
 import os
 import re
+import smtplib
 import threading
 import time
-import pandas as pd
-import requests
-import smtplib
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any
 
+import pandas as pd
+import requests
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from modules.config import MAP_FORNECEDORES, MAP_UNIDADES, get_power_automate_url
@@ -56,7 +57,7 @@ class SpreadsheetCache:
     Thread-safe via threading.Lock (Item 14).
     """
     _instance = None
-    _cache: Dict[str, Tuple[float, Any]] = {}
+    _cache: dict[str, tuple[float, Any]] = {}
     _max_size = 10
     _lock = threading.Lock()
 
@@ -65,7 +66,7 @@ class SpreadsheetCache:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def get(self, caminho: str) -> Optional[Any]:
+    def get(self, caminho: str) -> Any | None:
         """Retorna dados do cache se o arquivo não foi modificado."""
         with self._lock:
             if caminho not in self._cache:
@@ -92,7 +93,7 @@ class SpreadsheetCache:
                 del self._cache[oldest]
             self._cache[caminho] = (timestamp, data)
 
-    def invalidate(self, caminho: Optional[str] = None) -> None:
+    def invalidate(self, caminho: str | None = None) -> None:
         """Invalida cache de um arquivo específico ou de todos."""
         with self._lock:
             if caminho:
@@ -114,7 +115,7 @@ class EmailWorker(QThread):
     log_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(bool, str)
 
-    def __init__(self, smtp_config: Dict[str, Any], results: List[Dict[str, Any]], attachment_path: str = ""):
+    def __init__(self, smtp_config: dict[str, Any], results: list[dict[str, Any]], attachment_path: str = ""):
         super().__init__()
         self.smtp_config = smtp_config
         self.results = results
@@ -301,10 +302,8 @@ class EmailWorker(QThread):
             )
         finally:
             if smtp_connection is not None:
-                try:
-                    smtp_connection.quit()
-                except Exception:
-                    pass  # best-effort: conexão pode já ter caído
+                with contextlib.suppress(Exception):
+                    smtp_connection.quit()  # best-effort: conexão pode já ter caído
 
         password = None
         self.finished_signal.emit(True, "Processo finalizado.")

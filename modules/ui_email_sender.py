@@ -1,21 +1,36 @@
 import os
 import re
-from typing import Dict, Any, List
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTextEdit, QGroupBox, QFormLayout, QFileDialog, QMessageBox, QComboBox,
-    QRadioButton
-)
+from typing import Any
+
+import pandas as pd
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QRadioButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
 from modules.config import (
-    MAP_FORNECEDORES, MAP_SOLICITANTES, MAP_UNIDADES,
-    ProfileManager, get_power_automate_url,
+    MAP_FORNECEDORES,
+    MAP_SOLICITANTES,
+    MAP_UNIDADES,
+    ProfileManager,
+    get_power_automate_url,
 )
 from modules.email_sender import EmailWorker
 from modules.fluxo_orquestrador import get_modo_automatico
 from modules.logger import UILogger
-from modules.styles import set_status, scrollable
-import pandas as pd
+from modules.styles import scrollable, set_status
 
 try:
     import keyring
@@ -35,7 +50,7 @@ class EmailSenderWidget(QWidget):
         super().__init__()
         self.parent_fw = parent_framework
         self.profiles = ProfileManager.load_profiles()
-        self.results: List[Dict[str, Any]] = []
+        self.results: list[dict[str, Any]] = []
         self.email_worker = None
         self.attachment_path = ""
         # Melhoria 5: ModoAutomatico é um singleton centralizado em
@@ -318,7 +333,7 @@ class EmailSenderWidget(QWidget):
     def log(self, msg: str):
         UILogger.auto(self.txt_logs, msg)
 
-    def receber_resultados(self, results: List[Dict[str, Any]]):
+    def receber_resultados(self, results: list[dict[str, Any]]):
         self.results = results
         validos = [r for r in results if "erro" not in r and r.get("status") != "Sem pedido emitido"]
         set_status(

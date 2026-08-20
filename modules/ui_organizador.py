@@ -1,12 +1,23 @@
 import os
 from pathlib import Path
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTextEdit, QGroupBox, QFormLayout, QFileDialog, QMessageBox
-)
+
 from PyQt6.QtCore import pyqtSignal
-from modules.organizador import Organizador
+from PyQt6.QtWidgets import (
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
 from modules.logger import UILogger
+from modules.organizador import Organizador
 from modules.styles import scrollable
 
 

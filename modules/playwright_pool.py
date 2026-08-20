@@ -9,8 +9,10 @@ Cada um consumia ~200-400MB de RAM. Agora o pool gerencia e reusa contextos.
 """
 
 import asyncio
+import contextlib
 import threading
-from typing import Optional, Dict, Any
+from typing import Any
+
 from modules.config import resolve_edge_executable
 
 
@@ -22,19 +24,19 @@ class PlaywrightPool:
             page = context.pages[0] or await context.new_page()
     """
 
-    _instance: Optional["PlaywrightPool"] = None
+    _instance: PlaywrightPool | None = None
     _lock = threading.Lock()
 
     def __init__(self):
         self._playwright = None
-        self._playwright_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._async_lock: Optional[asyncio.Lock] = None
-        self._lock_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._contexts: Dict[str, Any] = {}
-        self._ref_count: Dict[str, int] = {}
+        self._playwright_loop: asyncio.AbstractEventLoop | None = None
+        self._async_lock: asyncio.Lock | None = None
+        self._lock_loop: asyncio.AbstractEventLoop | None = None
+        self._contexts: dict[str, Any] = {}
+        self._ref_count: dict[str, int] = {}
 
     @classmethod
-    def get_instance(cls) -> "PlaywrightPool":
+    def get_instance(cls) -> PlaywrightPool:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -105,27 +107,24 @@ class PlaywrightPool:
 
         self._ref_count[context_key] -= 1
         if self._ref_count[context_key] <= 0:
-            try:
+            with contextlib.suppress(Exception):
+                # best-effort: contexto já pode estar fechado/inválido
                 await self._contexts[context_key].close()
-            except Exception:
-                pass  # best-effort: contexto já pode estar fechado/inválido
             del self._contexts[context_key]
             del self._ref_count[context_key]
 
     async def cleanup_all(self) -> None:
         """Fecha todos os contextos e o Playwright. Chamar no encerramento do app."""
         for key in list(self._contexts.keys()):
-            try:
+            with contextlib.suppress(Exception):
+                # best-effort: encerramento não deve travar por contexto já fechado
                 await self._contexts[key].close()
-            except Exception:
-                pass  # best-effort: encerramento não deve travar por contexto já fechado
         self._contexts.clear()
         self._ref_count.clear()
         if self._playwright:
-            try:
+            with contextlib.suppress(Exception):
+                # best-effort: idem, app está encerrando de qualquer forma
                 await self._playwright.stop()
-            except Exception:
-                pass  # best-effort: idem, app está encerrando de qualquer forma
             self._playwright = None
             self._playwright_loop = None
 

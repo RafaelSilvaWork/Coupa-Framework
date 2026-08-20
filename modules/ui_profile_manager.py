@@ -1,17 +1,32 @@
 import logging
 
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTextEdit, QGroupBox, QFormLayout, QMessageBox, QComboBox, QCheckBox
-)
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from modules.config import (
-    MAP_FORNECEDORES, MAP_SOLICITANTES, MAP_UNIDADES,
-    ProfileManager, get_power_automate_url, get_saved_coupa_instance,
-    set_coupa_base_url, set_power_automate_url,
+    MAP_FORNECEDORES,
+    MAP_SOLICITANTES,
+    MAP_UNIDADES,
+    ProfileManager,
+    get_power_automate_url,
+    get_saved_coupa_instance,
+    set_coupa_base_url,
+    set_power_automate_url,
 )
-from modules.styles import set_status, scrollable
+from modules.styles import scrollable, set_status
 from modules.ui_mapeamento_editor import MapeamentoEditorDialog
 
 logger = logging.getLogger(__name__)

@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import json
 import logging
@@ -7,7 +8,6 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import requests
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
@@ -95,7 +95,7 @@ def _describe_github_api_error(exc: Exception) -> str:
     return str(exc)
 
 
-def _normalize_version(value: str) -> Optional[tuple[int, int, int]]:
+def _normalize_version(value: str) -> tuple[int, int, int] | None:
     text = (value or "").strip().lstrip("vV")
     if not text:
         return None
@@ -124,7 +124,7 @@ def _is_newer_version(latest_tag: str, current_version: str) -> bool:
     return latest > current
 
 
-def _find_checksum_url(assets: list, installer_name: str) -> Optional[str]:
+def _find_checksum_url(assets: list, installer_name: str) -> str | None:
     """Localiza o asset "<instalador>.sha256" publicado junto do instalador.
 
     Ver "Gerar checksum SHA-256 do instalador" em .github/workflows/release.yml -
@@ -152,7 +152,7 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def _fetch_expected_checksum(checksum_url: str) -> Optional[str]:
+def _fetch_expected_checksum(checksum_url: str) -> str | None:
     """Baixa o conteúdo do asset .sha256 e extrai o hash esperado.
 
     Aceita tanto o formato "só o hash" (o que release.yml gera) quanto o
@@ -171,7 +171,7 @@ def _fetch_expected_checksum(checksum_url: str) -> Optional[str]:
     return text.split()[0].strip().lower()
 
 
-def _verify_installer_checksum(file_path: str, checksum_url: str) -> Optional[str]:
+def _verify_installer_checksum(file_path: str, checksum_url: str) -> str | None:
     """Confere o SHA-256 do arquivo baixado contra o publicado na release.
 
     Chamado sempre antes de executar um instalador baixado da rede - sem essa
@@ -192,7 +192,7 @@ def _verify_installer_checksum(file_path: str, checksum_url: str) -> Optional[st
     return None
 
 
-def _start_installer(installer_path: str, parent_widget=None) -> Optional[subprocess.Popen]:
+def _start_installer(installer_path: str, parent_widget=None) -> subprocess.Popen | None:
     """Dispara o instalador silenciosamente, sem fechar o app atual.
 
     Compartilhado pelo fluxo de atualização automática e pelo fluxo manual de
@@ -263,8 +263,7 @@ class _DownloadThread(QThread):
             response = requests.get(self._url, stream=True, timeout=60)
             response.raise_for_status()
             total = int(response.headers.get("content-length", 0) or 0)
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".exe")
-            try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".exe") as tmp:
                 downloaded = 0
                 for chunk in response.iter_content(chunk_size=8192):
                     if not chunk:
@@ -274,9 +273,8 @@ class _DownloadThread(QThread):
                     if total:
                         self.progress.emit(int(downloaded * 100 / total))
                 tmp.flush()
-            finally:
-                tmp.close()
-            self.finished.emit(tmp.name)
+                tmp_name = tmp.name
+            self.finished.emit(tmp_name)
         except requests.RequestException as exc:
             logger.exception("Falha ao baixar atualização: %s", exc)
             self.error.emit(_describe_github_api_error(exc))
@@ -347,10 +345,8 @@ class _DownloadProgressFlow(QObject):
         self._progress_dlg.setLabelText("Verificando integridade do instalador...")
         verification_error = _verify_installer_checksum(path, self._checksum_url)
         if verification_error:
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(path)
-            except OSError:
-                pass
             self._on_error(verification_error)
             return
 

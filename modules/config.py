@@ -1,9 +1,10 @@
+import base64
 import json
 import os
-import base64
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
+
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -60,7 +61,7 @@ class FrameworkSettings:
         / "historico_renomeador.csv"
     )
     textos_sem_documento: tuple[str, ...] = ("AGUARDE, EM PROCESSAMENTO!",)
-    margens_impressao: Dict[str, str] = field(
+    margens_impressao: dict[str, str] = field(
         default_factory=lambda: {"top": "0.4in", "bottom": "0.4in", "left": "0.4in", "right": "0.4in"}
     )
     max_tentativas: int = 3
@@ -100,7 +101,7 @@ def _load_coupa_instance_override() -> str:
     if not INSTANCE_CONFIG_FILE.exists():
         return ""
     try:
-        with open(INSTANCE_CONFIG_FILE, "r", encoding="utf-8") as f:
+        with open(INSTANCE_CONFIG_FILE, encoding="utf-8") as f:
             data = json.load(f)
         return str(data.get("coupa_base_url", "")).strip()
     except (json.JSONDecodeError, OSError):
@@ -136,7 +137,7 @@ def get_power_automate_url() -> str:
     if not POWER_AUTOMATE_CONFIG_FILE.exists():
         return ""
     try:
-        with open(POWER_AUTOMATE_CONFIG_FILE, "r", encoding="utf-8") as f:
+        with open(POWER_AUTOMATE_CONFIG_FILE, encoding="utf-8") as f:
             data = json.load(f)
         return decrypt_value(str(data.get("url", "")).strip())
     except (json.JSONDecodeError, OSError):
@@ -226,7 +227,7 @@ def _derive_key(salt: bytes, iterations: int = PBKDF2_ITERATIONS) -> bytes:
     return base64.urlsafe_b64encode(kdf.derive(secret))
 
 
-def _get_fernet(iterations: int = PBKDF2_ITERATIONS) -> 'Fernet':
+def _get_fernet(iterations: int = PBKDF2_ITERATIONS) -> Fernet:
     salt_file = CONFIG_FILE.with_suffix(".salt")
     if salt_file.exists():
         salt = salt_file.read_bytes()
@@ -268,7 +269,7 @@ def decrypt_value(ciphertext: str) -> str:
         return ciphertext
 
 
-def encrypt_sensitive_config(config: Dict[str, Any]) -> Dict[str, Any]:
+def encrypt_sensitive_config(config: dict[str, Any]) -> dict[str, Any]:
     """Percorre o config e criptografa campos sensíveis."""
     encrypted = dict(config)
     for campo in SENSITIVE_FIELDS:
@@ -278,7 +279,7 @@ def encrypt_sensitive_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 # amazonq-ignore-next-line
 
-def decrypt_sensitive_config(config: Dict[str, Any]) -> Dict[str, Any]:
+def decrypt_sensitive_config(config: dict[str, Any]) -> dict[str, Any]:
     """Percorre o config e descriptografa campos sensíveis."""
     decrypted = dict(config)
     for campo in SENSITIVE_FIELDS:
@@ -289,11 +290,11 @@ def decrypt_sensitive_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 class ProfileManager:
     @staticmethod
-    def load_profiles() -> Dict[str, Any]:
+    def load_profiles() -> dict[str, Any]:
         """Carrega perfis do arquivo JSON com descriptografia de campos sensíveis."""
         if os.path.exists(CONFIG_FILE):
             try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                with open(CONFIG_FILE, encoding='utf-8') as f:
                     raw_profiles = json.load(f)
                 # Descriptografa os configs sensíveis de cada perfil
                 for profile_data in raw_profiles.values():
@@ -307,7 +308,7 @@ class ProfileManager:
         return {}
 
     @staticmethod
-    def save_profiles(profiles: Dict[str, Any]):
+    def save_profiles(profiles: dict[str, Any]):
         """Salva perfis no arquivo JSON com criptografia de campos sensíveis."""
         # Criptografa os configs sensíveis de cada perfil antes de salvar
         encrypted_profiles = {}

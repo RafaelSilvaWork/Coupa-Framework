@@ -1,4 +1,4 @@
-from modules.services.export_service import format_results_for_excel, export_to_excel_file
+from modules.services.export_service import export_to_excel_file, format_results_for_excel
 
 
 def test_format_results_sucesso():

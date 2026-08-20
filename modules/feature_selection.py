@@ -1,9 +1,8 @@
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
 
-MODULE_DEFINITIONS: List[Tuple[str, str]] = [
+MODULE_DEFINITIONS: list[tuple[str, str]] = [
     ("extrator", "📦 Extrator Inteligente"),
     ("downloader", "📥 Baixador de Orçamentos"),
     ("pdf", "📄 Gerador de PDF de Pedidos"),
@@ -14,7 +13,7 @@ MODULE_DEFINITIONS: List[Tuple[str, str]] = [
 ]
 
 
-def _default_selection() -> Dict[str, bool]:
+def _default_selection() -> dict[str, bool]:
     return {name: True for name, _ in MODULE_DEFINITIONS}
 
 
@@ -26,7 +25,7 @@ def _selection_file_path() -> Path:
     return executable_dir / "module_selection.json"
 
 
-def load_enabled_modules() -> Dict[str, bool]:
+def load_enabled_modules() -> dict[str, bool]:
     config_path = _selection_file_path()
     if not config_path.exists():
         return _default_selection()
@@ -48,14 +47,14 @@ def load_enabled_modules() -> Dict[str, bool]:
     return selection
 
 
-def save_enabled_modules(selection: Dict[str, bool]) -> Path:
+def save_enabled_modules(selection: dict[str, bool]) -> Path:
     normalized = {name: bool(selection.get(name, True)) for name, _ in MODULE_DEFINITIONS}
     config_path = _selection_file_path()
     config_path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
     return config_path
 
 
-def build_selection_for_modules(module_names: List[str]) -> Dict[str, bool]:
+def build_selection_for_modules(module_names: list[str]) -> dict[str, bool]:
     selection = {name: False for name, _ in MODULE_DEFINITIONS}
     for module_name in module_names:
         if module_name in selection:

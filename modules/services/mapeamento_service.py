@@ -15,7 +15,6 @@ parecido peguem o e-mail um do outro.
 """
 import re
 from pathlib import Path
-from typing import List, Tuple, Union
 
 import pandas as pd
 
@@ -31,7 +30,7 @@ def _valor_texto(valor) -> str:
     return "" if texto.lower() == "nan" else texto
 
 
-def load_mapping(path, com_codigo: bool = False) -> List[Union[Tuple[str, str], Tuple[str, str, str]]]:
+def load_mapping(path, com_codigo: bool = False) -> list[tuple[str, str] | tuple[str, str, str]]:
     """Lê uma planilha de mapeamento. Retorna lista de tuplas (nome, email) -
     ou (nome, codigo, email) quando com_codigo=True. Lista vazia se o
     arquivo não existir ou não tiver uma coluna de e-mail reconhecível."""
@@ -59,7 +58,7 @@ def load_mapping(path, com_codigo: bool = False) -> List[Union[Tuple[str, str], 
     if coluna_nome is None:
         return []
 
-    linhas: List[Union[Tuple[str, str], Tuple[str, str, str]]] = []
+    linhas: list[tuple[str, str] | tuple[str, str, str]] = []
     for _, linha in df.iterrows():
         nome = _valor_texto(linha.get(coluna_nome, ""))
         email = _valor_texto(linha.get(coluna_email, ""))

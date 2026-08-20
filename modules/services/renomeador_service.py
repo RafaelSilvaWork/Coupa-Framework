@@ -2,7 +2,6 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Tuple
 
 
 class RenomeadorService:
@@ -35,7 +34,7 @@ class RenomeadorService:
         return f"PO {id_coupa} - {fornecedor}.pdf"
 
     @staticmethod
-    def renomear_arquivo(origem: str, destino: str, backup_dir: str) -> Tuple[bool, str]:
+    def renomear_arquivo(origem: str, destino: str, backup_dir: str) -> tuple[bool, str]:
         origem_path = Path(origem)
         destino_path = Path(destino)
         backup_path = Path(backup_dir)

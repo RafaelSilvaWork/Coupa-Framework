@@ -20,7 +20,7 @@ Uso:
 import re
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class DataBus:
@@ -31,7 +31,7 @@ class DataBus:
         _lock: Lock para acesso thread-safe a partir de QThreads (Item 14).
     """
 
-    _store: Dict[str, Any] = {}
+    _store: dict[str, Any] = {}
     _lock = threading.Lock()
 
     @classmethod
@@ -47,7 +47,7 @@ class DataBus:
             return cls._store.get(key, default)
 
     @classmethod
-    def clear(cls, key: Optional[str] = None) -> None:
+    def clear(cls, key: str | None = None) -> None:
         """Limpa um item especifico ou todo o barramento."""
         with cls._lock:
             if key:
@@ -65,18 +65,18 @@ class DataBus:
     # --- Metodos de conveniencia para dados de extracao ---
 
     @classmethod
-    def store_extraction_results(cls, results: List[Dict[str, Any]]) -> None:
+    def store_extraction_results(cls, results: list[dict[str, Any]]) -> None:
         """Armazena os resultados completos da extracao da Aba 1."""
         cls.store("extraction_results", results)
         cls.store("extraction_timestamp", datetime.now())
 
     @classmethod
-    def get_extraction_results(cls) -> List[Dict[str, Any]]:
+    def get_extraction_results(cls) -> list[dict[str, Any]]:
         """Retorna os resultados completos da extracao."""
         return cls.get("extraction_results", [])
 
     @classmethod
-    def get_requisicoes_com_pedido(cls) -> List[str]:
+    def get_requisicoes_com_pedido(cls) -> list[str]:
         """Retorna lista de requisicoes que possuem pedido emitido.
 
         Uso: Aba 2 (Baixador de Orcamentos)
@@ -91,7 +91,7 @@ class DataBus:
         return requisicoes
 
     @classmethod
-    def get_pedidos_extraidos(cls) -> List[str]:
+    def get_pedidos_extraidos(cls) -> list[str]:
         """Retorna lista de pedidos extraidos no formato 'pedido\\trequisicao'.
 
         Uso: Aba 3 (Gerador de PDF de Pedidos)
@@ -109,7 +109,7 @@ class DataBus:
         return pedidos
 
     @classmethod
-    def get_resultados_validos_para_email(cls) -> List[Dict[str, Any]]:
+    def get_resultados_validos_para_email(cls) -> list[dict[str, Any]]:
         """Retorna resultados validos para envio de e-mail.
 
         Uso: Aba 6 (Disparo de E-mails)

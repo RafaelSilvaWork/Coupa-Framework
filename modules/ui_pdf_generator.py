@@ -1,15 +1,24 @@
 import os
+
+from PyQt6.QtCore import pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QGroupBox, QProgressBar, QFileDialog, QMessageBox
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import pyqtSlot, pyqtSignal
 
 from modules.fluxo_orquestrador import get_modo_automatico
+from modules.logger import UILogger
 from modules.pdf_generator import PdfGeneratorWorker
 from modules.services.data_bus import DataBus
-from modules.logger import UILogger
-from modules.styles import set_status, scrollable
+from modules.styles import scrollable, set_status
 
 
 class PedidoPdfGeneratorWidget(QWidget):

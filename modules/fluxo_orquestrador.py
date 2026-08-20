@@ -10,8 +10,10 @@ Uso:
     runner.start(results, [2, 3, 4, 5, 6])
 """
 
+import contextlib
 import re
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 
@@ -38,7 +40,7 @@ class ModoAutomatico:
         # Guard: evita re-inicializar o estado a cada chamada do singleton
         if not hasattr(self, "_inicializado"):
             self._ativo = False
-            self._aba_origem: Optional[str] = None
+            self._aba_origem: str | None = None
             self._inicializado = True
 
     def ativar(self, aba_origem: str = "Aba 1"):
@@ -54,14 +56,14 @@ class ModoAutomatico:
         return self._ativo
 
     @property
-    def aba_origem(self) -> Optional[str]:
+    def aba_origem(self) -> str | None:
         return self._aba_origem
 
     def __bool__(self):
         return self._ativo
 
 
-def get_modo_automatico() -> 'ModoAutomatico':
+def get_modo_automatico() -> ModoAutomatico:
     """Ponto de acesso único e centralizado ao singleton ModoAutomatico.
 
     Melhoria 5: todos os widgets e o runner devem usar esta função em vez de
@@ -122,11 +124,11 @@ class AutomaticFlowRunner(QObject):
 
     def _reset_state(self):
         """Reseta o estado interno do runner."""
-        self._abas_executar: List[int] = []
+        self._abas_executar: list[int] = []
         self._aba_atual_index = 0
         self._requisicoes_ok = False
         self._pedidos_ok = False
-        self._results: List[Dict[str, Any]] = []
+        self._results: list[dict[str, Any]] = []
 
     # --- Mapeamento de abas ---
 
@@ -139,7 +141,7 @@ class AutomaticFlowRunner(QObject):
 
     # --- Preparação dos dados ---
 
-    def _preparar_dados(self, results: List[Dict[str, Any]]):
+    def _preparar_dados(self, results: list[dict[str, Any]]):
         """Extrai requisições e pedidos dos resultados."""
         requisicoes = []
         pedidos = []
@@ -156,7 +158,7 @@ class AutomaticFlowRunner(QObject):
 
     # --- Validação ---
 
-    def validar_requisitos(self, abas: List[int], results: List[Dict[str, Any]]) -> List[str]:
+    def validar_requisitos(self, abas: list[int], results: list[dict[str, Any]]) -> list[str]:
         """Valida pré-requisitos de todas as abas selecionadas.
 
         Deriva requisições/pedidos dos resultados da extração e delega a
@@ -175,10 +177,10 @@ class AutomaticFlowRunner(QObject):
 
     def validar_pre_requisitos_abas(
         self,
-        abas: List[int],
+        abas: list[int],
         tem_requisicoes: bool = True,
         tem_pedidos: bool = True,
-    ) -> List[str]:
+    ) -> list[str]:
         """Valida os pré-requisitos de CONFIGURAÇÃO das abas (Melhoria 9).
 
         Usado pela Aba 1 antes da extração (open_edge_for_login), quando os
@@ -214,7 +216,7 @@ class AutomaticFlowRunner(QObject):
 
     # --- Execução do fluxo ---
 
-    def start(self, results: List[Dict[str, Any]], abas: List[int], log_callback=None):
+    def start(self, results: list[dict[str, Any]], abas: list[int], log_callback=None):
         """Inicia o fluxo automático.
 
         Args:
@@ -320,10 +322,8 @@ class AutomaticFlowRunner(QObject):
 
         # Conectar sinal de finalização
         if hasattr(widget, 'automatico_finished'):
-            try:
+            with contextlib.suppress(TypeError):
                 widget.automatico_finished.disconnect()
-            except TypeError:
-                pass
             widget.automatico_finished.connect(self._aba_finalizada)
 
         # Navegar para a aba

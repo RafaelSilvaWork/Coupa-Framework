@@ -10,8 +10,16 @@ parecido).
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QMessageBox, QFileDialog, QHeaderView
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
 )
 
 from modules.services.mapeamento_service import is_valid_email, load_mapping, save_mapping

@@ -24,8 +24,8 @@ Uso do helper `set_status`:
     set_status(self.lbl_status, "success")   # também: "error", "warning", "muted", "normal"
 """
 
-from PyQt6.QtWidgets import QWidget, QScrollArea, QFrame
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QFrame, QScrollArea, QWidget
 
 from modules.styles_qss.base import QSS_BASE
 from modules.styles_qss.buttons import QSS_BUTTONS

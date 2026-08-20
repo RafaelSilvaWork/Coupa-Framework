@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from modules.config import ProfileManager, _LEGACY_PBKDF2_ITERATIONS, _get_fernet, encrypt_value, decrypt_value
+from modules.config import _LEGACY_PBKDF2_ITERATIONS, ProfileManager, _get_fernet, decrypt_value, encrypt_value
 
 
 def test_encrypt_decrypt_roundtrip():

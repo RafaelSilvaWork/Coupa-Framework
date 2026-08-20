@@ -3,11 +3,12 @@
 Extrai a logica de negocio de exportacao dos widgets de UI,
 permitindo reuso e testes unitarios independentes do PyQt.
 """
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 import pandas as pd
 
 
-def format_results_for_excel(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def format_results_for_excel(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Converte a lista de resultados brutos da extracao em linhas formatadas para Excel.
 
     Args:
@@ -59,10 +60,10 @@ def format_results_for_excel(results: List[Dict[str, Any]]) -> List[Dict[str, An
 
 
 def export_to_excel_file(
-    results: List[Dict[str, Any]],
+    results: list[dict[str, Any]],
     file_path: str,
     sheet_name: str = "Resultados Coupa",
-) -> Optional[str]:
+) -> str | None:
     """Exporta os resultados para um arquivo Excel (.xlsx).
 
     Args:

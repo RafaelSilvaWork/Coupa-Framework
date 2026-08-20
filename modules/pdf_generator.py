@@ -1,19 +1,19 @@
+import contextlib
+import time
 from datetime import datetime
 from pathlib import Path
-import time
-from typing import Dict, List, Optional
 
 import pandas as pd
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from modules.config import (
-    MAX_TENTATIVAS,
     ESPERA_ENTRE_TENTATIVAS,
-    TEXTOS_SEM_DOCUMENTO,
     MARGENS_IMPRESSAO,
+    MAX_TENTATIVAS,
     PERFIL_EDGE_DOWNLOAD,
-    get_url_teste_login,
+    TEXTOS_SEM_DOCUMENTO,
     get_url_base_impressao_pdf,
+    get_url_teste_login,
     resolve_edge_executable,
 )
 from modules.playwright_pool import PlaywrightContextSyncManager
@@ -26,9 +26,9 @@ class PdfGeneratorWorker(QThread):
 
     def __init__(
         self,
-        pedidos: List[str],
+        pedidos: list[str],
         pasta_saida: str,
-        requisicoes_por_pedido: Optional[Dict[str, List[str]]] = None,
+        requisicoes_por_pedido: dict[str, list[str]] | None = None,
     ):
         super().__init__()
         self.pedidos = pedidos
@@ -36,7 +36,7 @@ class PdfGeneratorWorker(QThread):
         self.requisicoes_por_pedido = requisicoes_por_pedido or {}
         self.cancelado = False
 
-    def gerar_relatorio(self, resultados: Dict[str, Dict[str, str]]) -> Path:
+    def gerar_relatorio(self, resultados: dict[str, dict[str, str]]) -> Path:
         linhas = []
         for pedido in self.pedidos:
             resultado = resultados.get(pedido, {"status": "Cancelado", "detalhe": "Não processado"})
@@ -90,15 +90,13 @@ class PdfGeneratorWorker(QThread):
                 page = pages[0] if pages else context.new_page()
                 page.set_default_timeout(45000)
 
-                try:
+                with contextlib.suppress(Exception):
+                    # timeout esperado se a página de teste já estiver carregada
                     page.goto(get_url_teste_login(), wait_until="domcontentloaded")
-                except Exception:
-                    pass  # timeout esperado se a página de teste já estiver carregada
 
-                try:
+                with contextlib.suppress(Exception):
+                    # rede pode nunca ficar ociosa; segue com o que já carregou
                     page.wait_for_load_state("networkidle", timeout=8000)
-                except Exception:
-                    pass  # rede pode nunca ficar ociosa; segue com o que já carregou
 
                 deslogado = (
                     "login" in page.url.lower()
@@ -133,10 +131,9 @@ class PdfGeneratorWorker(QThread):
                     try:
                         page.goto(url_print, wait_until="domcontentloaded", timeout=45000)
 
-                        try:
+                        with contextlib.suppress(Exception):
+                            # timeout esperado; a checagem de "documento pronto" segue abaixo
                             page.wait_for_load_state("load", timeout=5000)
-                        except Exception:
-                            pass  # timeout esperado; a checagem de "documento pronto" segue abaixo
 
                         doc_pronto = False
                         for tentativa in range(1, MAX_TENTATIVAS + 1):

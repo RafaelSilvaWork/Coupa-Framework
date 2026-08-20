@@ -1,26 +1,41 @@
 import sys
 import traceback
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QTabWidget, QStatusBar,
-    QLabel, QVBoxLayout, QWidget, QPushButton, QHBoxLayout,
-    QTextEdit, QProgressBar, QFrame
-)
 from PyQt6.QtCore import Qt, QTimer
-from modules import (
-    CoupaExtractorWidget, OrcamentoDownloaderWidget,
-    PedidoPdfGeneratorWidget, RenomeadorWidget, OrganizadorWidget,
-    EmailSenderWidget, ProfileManagerWidget, IMPORT_ERRORS
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QStatusBar,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from modules.styles import APP_STYLESHEET, set_status
-from modules.playwright_pool import cleanup_playwright_pool
-from modules.updater import UpdateManager
-from modules.ui_versions import VersionHistoryDialog
-from modules.ui_module_status import ModuleStatusDialog
+
+from modules import (
+    IMPORT_ERRORS,
+    CoupaExtractorWidget,
+    EmailSenderWidget,
+    OrcamentoDownloaderWidget,
+    OrganizadorWidget,
+    PedidoPdfGeneratorWidget,
+    ProfileManagerWidget,
+    RenomeadorWidget,
+)
 from modules.feature_selection import is_module_enabled
 from modules.module_installer import ModuleInstallWorker
+from modules.playwright_pool import cleanup_playwright_pool
+from modules.styles import APP_STYLESHEET, set_status
 from modules.telemetry import init_telemetry
+from modules.ui_module_status import ModuleStatusDialog
+from modules.ui_versions import VersionHistoryDialog
+from modules.updater import UpdateManager
 
 
 class ModuleSpec(NamedTuple):
@@ -35,7 +50,7 @@ class ModuleSpec(NamedTuple):
 
     key: str
     attr: str
-    widget_class: Optional[type]
+    widget_class: type | None
     class_name: str
     label: str
 
@@ -65,7 +80,7 @@ MODULES: list[ModuleSpec] = [
 _MODULES_BY_KEY = {module.key: module for module in MODULES}
 
 
-def _resolve_module_error(module_key: str) -> Optional[str]:
+def _resolve_module_error(module_key: str) -> str | None:
     """Erro de import salvo para este módulo, se houver.
 
     IMPORT_ERRORS pode estar preenchido pela chave da classe widget (falha
@@ -241,7 +256,7 @@ class LockedModuleWidget(QWidget):
 
 class FrameworkApp(QMainWindow):
     def __init__(self):
-        super(FrameworkApp, self).__init__()
+        super().__init__()
         self.setWindowTitle("Coupa Framework - Automação de Suprimentos")
         self.setGeometry(100, 100, 1400, 920)
         self.setMinimumSize(1024, 720)

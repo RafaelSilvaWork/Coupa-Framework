@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame
+from PyQt6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from modules.styles import scrollable, set_status
-from modules.updater import VersionManager, CURRENT_VERSION, _format_version_label
+from modules.updater import CURRENT_VERSION, VersionManager, _format_version_label
 
 
 def _format_published_date(iso_text: str) -> str:

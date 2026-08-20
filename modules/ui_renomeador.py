@@ -3,16 +3,26 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Dict
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTableWidget, QTableWidgetItem, QFileDialog, QMessageBox, QComboBox
-)
-from PyQt6.QtCore import pyqtSignal, QThread
-from modules.config import HISTORICO_RENOMEADOR
-from modules.services.renomeador_service import RenomeadorService
+
 import fitz
 from filelock import FileLock, Timeout
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from modules.config import HISTORICO_RENOMEADOR
+from modules.services.renomeador_service import RenomeadorService
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +30,13 @@ logger = logging.getLogger(__name__)
 class PDFCache:
     """Cache LRU para dados extraídos de PDFs."""
     def __init__(self, max_size: int = 50):
-        self._cache: Dict[str, Dict] = {}
+        self._cache: dict[str, dict] = {}
         self._max_size = max_size
 
-    def get(self, caminho: str) -> Dict | None:
+    def get(self, caminho: str) -> dict | None:
         return self._cache.get(caminho)
 
-    def set(self, caminho: str, dados: Dict):
+    def set(self, caminho: str, dados: dict):
         if len(self._cache) >= self._max_size:
             oldest = next(iter(self._cache))
             del self._cache[oldest]
@@ -313,7 +323,7 @@ class RenomeadorWidget(QWidget):
         )[0].strip()
         return texto
 
-    def extrair_dados(self, caminho: str) -> Dict[str, str]:
+    def extrair_dados(self, caminho: str) -> dict[str, str]:
         """Item 13: Extrai dados do PDF com cache LRU."""
         # Verifica cache antes de ler o PDF
         cached = self._pdf_cache.get(caminho)

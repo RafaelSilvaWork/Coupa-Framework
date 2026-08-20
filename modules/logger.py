@@ -15,7 +15,7 @@ import os
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional
+
 from PyQt6.QtWidgets import QTextEdit
 
 
@@ -63,7 +63,7 @@ class UILogger:
         )
 
     @staticmethod
-    def info(log_widget: Optional[QTextEdit], msg: str) -> None:
+    def info(log_widget: QTextEdit | None, msg: str) -> None:
         """Loga uma mensagem informativa (azul claro)."""
         _file_logger.info(msg)
         if log_widget is None:
@@ -72,7 +72,7 @@ class UILogger:
         log_widget.append(html)
 
     @staticmethod
-    def warning(log_widget: Optional[QTextEdit], msg: str) -> None:
+    def warning(log_widget: QTextEdit | None, msg: str) -> None:
         """Loga um aviso (amarelo)."""
         _file_logger.warning(msg)
         if log_widget is None:
@@ -81,7 +81,7 @@ class UILogger:
         log_widget.append(html)
 
     @staticmethod
-    def error(log_widget: Optional[QTextEdit], msg: str) -> None:
+    def error(log_widget: QTextEdit | None, msg: str) -> None:
         """Loga um erro (vermelho)."""
         _file_logger.error(msg)
         if log_widget is None:
@@ -90,7 +90,7 @@ class UILogger:
         log_widget.append(html)
 
     @staticmethod
-    def success(log_widget: Optional[QTextEdit], msg: str) -> None:
+    def success(log_widget: QTextEdit | None, msg: str) -> None:
         """Loga uma mensagem de sucesso (verde)."""
         _file_logger.info(msg)
         if log_widget is None:
@@ -99,7 +99,7 @@ class UILogger:
         log_widget.append(html)
 
     @staticmethod
-    def plain(log_widget: Optional[QTextEdit], msg: str) -> None:
+    def plain(log_widget: QTextEdit | None, msg: str) -> None:
         """Loga mensagem em texto plano (sem HTML), compatível com logs antigos."""
         _file_logger.info(msg)
         if log_widget is None:
@@ -108,7 +108,7 @@ class UILogger:
         log_widget.append(f"[{horario}] {msg}")
 
     @staticmethod
-    def auto(log_widget: Optional[QTextEdit], msg: str) -> None:
+    def auto(log_widget: QTextEdit | None, msg: str) -> None:
         """Detecta o nível automaticamente por emoji/palavra-chave e loga."""
         if log_widget is None:
             return

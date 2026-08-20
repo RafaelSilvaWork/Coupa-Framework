@@ -1,8 +1,9 @@
 import asyncio
+import contextlib
 import re
 import threading
-from typing import Dict, Any, List, Optional
 from pathlib import Path
+from typing import Any
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -33,7 +34,7 @@ def _bloquear_recursos_pesados(route):
     return route.continue_()
 
 
-def _describe_network_error(exc: Exception) -> Optional[str]:
+def _describe_network_error(exc: Exception) -> str | None:
     """Traduz erros comuns de rede/conexão do Playwright para uma mensagem
     acionável em vez do texto cru da exceção (ex: "net::ERR_NAME_NOT_RESOLVED
     at https://...", que não deixa claro se o problema é a internet, a URL
@@ -67,8 +68,8 @@ class CoupaScraper:
 
     def __init__(
         self,
-        requisicoes: List[str],
-        config_extrair: Dict[str, bool],
+        requisicoes: list[str],
+        config_extrair: dict[str, bool],
         pause_event=None,
         login_confirmation_event=None,
         cancel_event=None,
@@ -116,8 +117,8 @@ class CoupaScraper:
         log_callback("✅ Login confirmado. Iniciando extração...")
         return True
 
-    async def run(self, log_callback, edge_ready_callback=None) -> List[Dict[str, Any]]:
-        extracted_data: List[Dict[str, Any]] = []
+    async def run(self, log_callback, edge_ready_callback=None) -> list[dict[str, Any]]:
+        extracted_data: list[dict[str, Any]] = []
         log_callback("⚡ Iniciando Edge em modo rápido...")
 
         caminho_edge = resolve_edge_executable()
@@ -155,8 +156,8 @@ class CoupaScraper:
         context,
         log_callback,
         edge_ready_callback,
-        extracted_data: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        extracted_data: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Executa a extração das requisições dentro de um contexto gerenciado."""
         coupa_base_url = get_coupa_base_url()
         pages = context.pages
@@ -184,10 +185,9 @@ class CoupaScraper:
         # Só bloqueia imagem/mídia/fonte/CSS a partir daqui - com o login já
         # confirmado, essas páginas não precisam mais carregar com estilo
         # completo, e a extração fica mais rápida.
-        try:
+        with contextlib.suppress(Exception):
+            # rota já definida em contexto reutilizado
             await context.route("**/*", _bloquear_recursos_pesados)
-        except Exception:
-            pass  # rota já definida em contexto reutilizado
 
         for idx, req in enumerate(self.requisicoes, 1):
             if not await self.aguardar_retomada(log_callback):
@@ -221,10 +221,8 @@ class CoupaScraper:
                 # original: pedido de uma requisição anterior "grudando" na
                 # seguinte, já que #msgbar não é recriado entre navegações).
                 seletor_msgbar_com_po = "#msgbar:has-text('PO nº')"
-                try:
+                with contextlib.suppress(Exception):
                     await page.wait_for_selector(seletor_msgbar_com_po, state="attached", timeout=2500)
-                except Exception:
-                    pass
 
                 pedido_texto = ""
                 msgbar_elemento = await page.query_selector("#msgbar")
@@ -250,10 +248,9 @@ class CoupaScraper:
                 aba_carrinho = await page.query_selector("a:has-text('Itens do carrinho')")
                 if aba_carrinho:
                     await aba_carrinho.click()
-                    try:
+                    with contextlib.suppress(Exception):
+                        # timeout esperado quando o fornecedor não tem link de detalhe
                         await page.wait_for_selector("a[href*='/suppliers/show/']", timeout=3000)
-                    except Exception:
-                        pass  # timeout esperado quando o fornecedor não tem link de detalhe
 
                 fornecedor_link = await page.query_selector("a.s-coupaSimpleTooltip[href*='/suppliers/show/']")
                 if not fornecedor_link:
@@ -414,7 +411,7 @@ class AutomationWorker(QThread):
     finished_signal = pyqtSignal(list)
     progress_signal = pyqtSignal(int)  # Item 21: Sinal de progresso (0-100)
 
-    def __init__(self, requisicoes: List[str], config_extrair: Dict[str, bool]):
+    def __init__(self, requisicoes: list[str], config_extrair: dict[str, bool]):
         super().__init__()
         self.requisicoes = requisicoes
         self.config_extrair = config_extrair
@@ -477,8 +474,6 @@ class AutomationWorker(QThread):
             self.finished_signal.emit([{"erro": f"Falha crítica na automação: {str(e)}"}])
         finally:
             if loop is not None:
-                try:
-                    loop.close()
-                except Exception:
-                    pass  # best-effort: loop pode já estar fechado
+                with contextlib.suppress(Exception):
+                    loop.close()  # best-effort: loop pode já estar fechado
 

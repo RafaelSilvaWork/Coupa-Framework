@@ -1,7 +1,9 @@
-import pytest
 from unittest.mock import MagicMock
-from PyQt6.QtWidgets import QApplication
+
+import pytest
 from PyQt6.QtCore import QObject
+from PyQt6.QtWidgets import QApplication
+
 from modules.fluxo_orquestrador import AutomaticFlowRunner, ModoAutomatico, get_modo_automatico
 
 

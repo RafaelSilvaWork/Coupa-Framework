@@ -1,19 +1,30 @@
-from typing import List
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QComboBox, QTextEdit,
-    QGroupBox, QMessageBox, QCheckBox, QFileDialog,
-    QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView
-)
+
 from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from modules.config import ProfileManager
 from modules.coupa_scraper import AutomationWorker
 from modules.fluxo_orquestrador import AutomaticFlowRunner
-from modules.services.export_service import export_to_excel_file
-from modules.services.data_bus import DataBus
 from modules.logger import UILogger
-from modules.styles import set_status, scrollable
+from modules.services.data_bus import DataBus
+from modules.services.export_service import export_to_excel_file
+from modules.styles import scrollable, set_status
 
 
 class CoupaExtractorWidget(QWidget):
@@ -395,7 +406,7 @@ class CoupaExtractorWidget(QWidget):
                 "Status: fluxo autom\u00e1tico desabilitado. Nenhuma aba selecionada.",
             )
 
-    def iniciar_fluxo_automatico(self, results: list, abas: List[int]):
+    def iniciar_fluxo_automatico(self, results: list, abas: list[int]):
         """Inicia o fluxo autom\u00e1tico usando o runner centralizado do fluxo_orquestrador."""
         if self._fluxo_em_andamento:
             self.log("\u26a0\ufe0f Fluxo autom\u00e1tico j\u00e1 em andamento. Ignorando nova solicita\u00e7\u00e3o.")

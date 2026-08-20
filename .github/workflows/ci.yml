@@ -28,8 +28,8 @@ jobs:
       - name: Ruff check
         run: python -m ruff check .
 
-      - name: Checagem estatica de tipos (modules)
-        run: python -m mypy modules --ignore-missing-imports
+      - name: Checagem estatica de tipos (modules e main)
+        run: python -m mypy modules main.py --ignore-missing-imports
 
       - name: Run tests with coverage
         run: python -m pytest -q --cov=modules --cov-report=term-missing --cov-report=xml
